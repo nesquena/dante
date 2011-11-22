@@ -21,8 +21,9 @@ describe "dante runner" do
   describe "with daemonize flag" do
     before do
       @process = TestingProcess.new('b')
-      @run_options = { :daemonize => true, :pid_path => "/tmp/dante.pid" }
-      @runner = Dante::Runner.new('test-process-2', @run_options) { @process.run_b! }
+      @run_options = { :daemonize => true, :pid_path => "/tmp/dante.pid", :port => 8080 }
+      @runner = Dante::Runner.new('test-process-2', @run_options) { |opts|
+        @process.run_b!(opts[:port]) }
       @stdout = capture_stdout { @runner.execute! }
       sleep(1)
     end
@@ -32,7 +33,7 @@ describe "dante runner" do
       Process.kill "INT", @pid
       sleep(1) # Wait to complete
       @output = File.read(@process.tmp_path)
-      assert_match /Started!!/, @output
+      assert_match /Started on 8080!!/, @output
       assert_match /Abort!!/, @output
       assert_match /Closing!!/, @output
     end
@@ -42,7 +43,7 @@ describe "dante runner" do
       Process.kill "TERM", @pid
       sleep(1) # Wait to complete
       @output = File.read(@process.tmp_path)
-      assert_match /Started!!/, @output
+      assert_match /Started on 8080!!/, @output
       assert_match /Abort!!/, @output
       assert_match /Closing!!/, @output
     end

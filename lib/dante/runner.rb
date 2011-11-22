@@ -65,7 +65,7 @@ module Dante
         exit
       }
 
-      @startup_command.call
+      @startup_command.call(options)
     end
 
     def stop
@@ -77,7 +77,7 @@ module Dante
       OptionParser.new do |opts|
         opts.summary_width = 25
         opts.banner = ["#{@name} (#{VERSION})\n\n",
-                      "Usage: #{@name} [-P file] [-d] [-k port]\n",
+                      "Usage: #{@name} [-p port] [-P file] [-d] [-k]\n",
                       "       #{@name} --help\n"].join("")
         opts.separator ""
 

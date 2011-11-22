@@ -38,10 +38,10 @@ class TestingProcess
     @tmp.close
   end # run_a!
 
-  def run_b!
+  def run_b!(port=9090)
     begin
       @tmp = File.new(@tmp_path, 'w')
-      @tmp.print "Started!!"
+      @tmp.print "Started on #{port}!!"
       sleep(100)
     rescue Dante::Runner::Abort
       @tmp.print "Abort!!"

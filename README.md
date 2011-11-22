@@ -39,8 +39,9 @@ Dante is meant to be used from any "bin" executable. For instance, to create a b
 
 require File.expand_path("../../myapp.rb", __FILE__)
 
-Dante.run('myapp') do
-  Thin::Server.start('0.0.0.0', port) do
+Dante.run('myapp') do |opts|
+  # opts: host, pid_path, port, daemonize, user, group
+  Thin::Server.start('0.0.0.0', opts[:port]) do
     use Rack::CommonLogger
     use Rack::ShowExceptions
     run MyApp
@@ -63,7 +64,7 @@ This gives your binary several useful things for free:
 will start the app undaemonized in the terminal, handling trapping and stopping the process.
 
 ```
-./bin/myapp -d -P /var/run/myapp.pid
+./bin/myapp -p 8080 -d -P /var/run/myapp.pid
 ```
 
 will daemonize and start the process, storing the pid in the specified pid file.
