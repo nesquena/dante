@@ -20,6 +20,16 @@ Add to your Gemfile:
 gem "dante"
 ```
 
+or to your gemspec:
+
+```ruby
+# mygem.gemspec
+
+Gem::Specification.new do |s|
+  s.add_dependency "dante"
+end
+```
+
 ## Usage
 
 Dante is meant to be used from any "bin" executable. For instance, to create a binary for a web server, create a file in `bin/myapp`:
