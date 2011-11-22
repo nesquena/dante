@@ -22,7 +22,7 @@ gem "dante"
 
 ## Usage
 
-Dante is meant to be used from any "bin" executable. For instance, to create a binary for a web server, create a file in `bin/mysite`:
+Dante is meant to be used from any "bin" executable. For instance, to create a binary for a web server, create a file in `bin/myapp`:
 
 ```ruby
 #!/usr/bin/env ruby
@@ -36,6 +36,12 @@ Dante.run('myapp') do
     run MyApp
   end
 end
+```
+
+Be sure to properly make your bin executable:
+
+```
+chmod +x bin/myapp
 ```
 
 This gives your binary several useful things for free:
