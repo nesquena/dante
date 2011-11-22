@@ -16,7 +16,7 @@ gem "dante"
 
 Dante is meant to be used from any "bin" executable. For instance, to create a binary for a web server, create a file in `bin/mysite`:
 
-```
+```ruby
 #!/usr/bin/env ruby
 
 require File.expand_path("../../myapp.rb", __FILE__)
