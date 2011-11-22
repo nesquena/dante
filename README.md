@@ -2,6 +2,15 @@
 
 Turn any process into a daemon with ease.
 
+## Why Dante?
+
+Dante is the simplest possible thing that can work to turn arbitrary ruby code into a 'robust' binary that
+can be started normally or as a daemon, and will store a pid file automatically. Dante also allows a process
+to be stopped just as easily using a standardized set of command line options.
+
+If you need to create a ruby executable and you want standard daemon start/stop with pid files
+and no hassle, this gem will be a great way to get started.
+
 ## Installation
 
 Add to your Gemfile:
