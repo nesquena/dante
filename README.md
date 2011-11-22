@@ -1,8 +1,8 @@
 # Dante
 
-Turn any process into a daemon with ease.
+Turn any ruby into a daemon.
 
-## Why Dante?
+## Description
 
 Dante is the simplest possible thing that will work to turn arbitrary ruby code into an executable that
 can be started via command line or start/stop a daemon, and will store a pid file for you.
