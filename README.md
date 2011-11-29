@@ -81,6 +81,46 @@ will stop all daemonized processes for the specified pid file.
 
 Will return a useful help banner message explaining the simple usage.
 
+## Customization
+
+In many cases, you will need to add custom flags/options or a custom description to your executable. You can do this
+easily by using the `Dante::Runner` directly:
+
+```ruby
+#!/usr/bin/env ruby
+
+require File.expand_path("../../myapp.rb", __FILE__)
+
+# Set default port to 8080
+runner = Dante::Runner.new('myapp', :port => 8080)
+# Sets the description in 'help'
+runner.description = "This is myapp"
+runner.with_options do |opts|
+  opts.on("-t", "--test TEST", String, "Test this thing") do |test|
+    options[:test] = test
+  end
+end
+# Parse command-line options and execute the process
+runner.execute do |opts|
+  # opts: host, pid_path, port, daemonize, user, group
+  Thin::Server.start('0.0.0.0', opts[:port]) do
+    puts opts[:test] # Referencing my custom option
+    use Rack::CommonLogger
+    use Rack::ShowExceptions
+    run MyApp
+  end
+end
+```
+
+Now you would be able to do:
+
+```
+./bin/myapp -t custom
+```
+
+and the `opts` would contain the `:test` option for use in your script. In addition, help will now contain
+your customized description in the banner.
+
 ## God
 
 Dante can be used well in conjunction with the excellent God process manager. Simply, use Dante to daemonize a process

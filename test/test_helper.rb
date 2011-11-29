@@ -1,6 +1,7 @@
 require 'rubygems'
 require 'tempfile'
 require 'minitest/autorun'
+require 'mocha'
 $:.unshift File.expand_path("../../lib")
 require 'dante'
 
@@ -32,9 +33,10 @@ class TestingProcess
     @tmp_path = "/tmp/dante-#{name}.log"
   end # initialize
 
-  def run_a!
+  def run_a!(data=nil)
     @tmp = File.new(@tmp_path, 'w')
-    @tmp.print("Started")
+    @tmp.puts("Started")
+    @tmp.puts "Data is: #{data}" if data
     @tmp.close
   end # run_a!
 

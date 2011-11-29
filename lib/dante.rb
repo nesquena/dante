@@ -16,12 +16,12 @@ require "dante/runner"
 
 module Dante
 
-  # Forks a process and takes some list of params. I don't really know what this does.
+  # Forks a process and handles option parsing and start/stopping.
   #
   # @example
   #   Dante.run("process-name") { Server.run! }
   #
   def self.run(name, options={}, &blk)
-    Runner.new(name, options, &blk).execute!
+    Runner.new(name, options, &blk).execute
   end
 end

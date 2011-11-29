@@ -7,7 +7,7 @@ require 'erb'
 
 This is a utility for setting up a binary executable for a service.
 
-# Dante::Runner.run("buffet", :pid_path => "/var/run/buffet.pid") do
+# Dante::Runner.new("buffet", :pid_path => "/var/run/buffet.pid") do
 #   ...startup service here...
 # end
 
@@ -18,7 +18,7 @@ module Dante
     # Signal to application that the process is shutting down
     class Abort < Exception; end
 
-    attr_accessor :options
+    attr_accessor :options, :name, :description
 
     class << self
       def run(*args, &block)
@@ -29,23 +29,30 @@ module Dante
     def initialize(name, defaults={}, &block)
       @name = name
       @startup_command = block
-      self.options = {
+      @options = {
         :host => '0.0.0.0',
         :pid_path => "/var/run/#{@name}.pid"
       }.merge(defaults)
+    end
 
-      parse_options
-
-      if options.include?(:kill)
-        kill_pid(options[:kill] || '*')
-      end
-
-      Process.euid = options[:user] if options[:user]
-      Process.egid = options[:group] if options[:group]
+    # Accepts options for the process
+    # @runner.with_options { |opts| opts.on(...) }
+    def with_options(&block)
+      @with_options = block
     end
 
     # Executes the runner based on options
-    def execute!
+    # @runner.execute
+    # @runner.execute { ... }
+    def execute(&block)
+      parse_options
+      kill_pid(options[:kill] || '*') if options.include?(:kill)
+
+      Process.euid = options[:user] if options[:user]
+      Process.egid = options[:group] if options[:group]
+
+      @startup_command = block if block_given?
+
       if !options[:daemonize]
         start
       else
@@ -65,7 +72,7 @@ module Dante
         exit
       }
 
-      @startup_command.call(options)
+      @startup_command.call(self.options) if @startup_command
     end
 
     def stop
@@ -74,11 +81,12 @@ module Dante
     end
 
     def parse_options
+      headline = [@name, @description].compact.join(" - ")
       OptionParser.new do |opts|
         opts.summary_width = 25
-        opts.banner = ["#{@name} (#{VERSION})\n\n",
+        opts.banner = [headline, "\n\n",
                       "Usage: #{@name} [-p port] [-P file] [-d] [-k]\n",
-                      "       #{@name} --help\n"].join("")
+                      "       #{@name} --help\n"].compact.join("")
         opts.separator ""
 
         opts.on("-p", "--port PORT", Integer, "Specify port", "(default: #{options[:port]})") do |v|
@@ -109,6 +117,9 @@ module Dante
           puts "#{opts}\n"
           exit
         end
+
+        # Load options specified through 'with_options'
+        instance_exec(opts, &@with_options) if @with_options
       end.parse!
       options
     end
