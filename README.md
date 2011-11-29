@@ -95,6 +95,7 @@ require File.expand_path("../../myapp.rb", __FILE__)
 runner = Dante::Runner.new('myapp', :port => 8080)
 # Sets the description in 'help'
 runner.description = "This is myapp"
+# Setup custom 'test' option flag
 runner.with_options do |opts|
   opts.on("-t", "--test TEST", String, "Test this thing") do |test|
     options[:test] = test
