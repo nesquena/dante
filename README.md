@@ -84,7 +84,7 @@ Will return a useful help banner message explaining the simple usage.
 ## Customization
 
 In many cases, you will need to add custom flags/options or a custom description to your executable. You can do this
-easily by using the `Dante::Runner` directly:
+easily by using `Dante::Runner` more explicitly:
 
 ```ruby
 #!/usr/bin/env ruby
