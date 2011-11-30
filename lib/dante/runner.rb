@@ -46,17 +46,14 @@ module Dante
     # @runner.execute { ... }
     def execute(&block)
       parse_options
-      kill_pid(options[:kill] || '*') if options.include?(:kill)
 
-      Process.euid = options[:user] if options[:user]
-      Process.egid = options[:group] if options[:group]
-
-      @startup_command = block if block_given?
-
-      if !options[:daemonize]
-        start
-      else
-        daemonize
+      if options.include?(:kill)
+        kill_pid(options[:kill] || '*')
+      else # create process
+        Process.euid = options[:user] if options[:user]
+        Process.egid = options[:group] if options[:group]
+        @startup_command = block if block_given?
+        options[:daemonize] ? daemonize : start
       end
     end
 
@@ -134,16 +131,14 @@ module Dante
     def kill_pid(k)
       Dir[options[:pid_path]].each do |f|
         begin
-        puts f
-        pid = IO.read(f).chomp.to_i
-        FileUtils.rm f
-        Process.kill(9, pid)
-        puts "killed PID: #{pid}"
+          pid = IO.read(f).chomp.to_i
+          FileUtils.rm f
+          Process.kill(9, pid)
+          puts "killed PID: #{pid} at #{f}"
         rescue => e
           puts "Failed to kill! #{k}: #{e}"
         end
       end
-      exit
     end
 
     def daemonize
