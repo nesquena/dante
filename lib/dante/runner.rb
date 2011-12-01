@@ -133,7 +133,7 @@ module Dante
         begin
           pid = IO.read(f).chomp.to_i
           FileUtils.rm f
-          Process.kill(9, pid)
+          Process.kill('INT', pid)
           puts "killed PID: #{pid} at #{f}"
         rescue => e
           puts "Failed to kill! #{k}: #{e}"
