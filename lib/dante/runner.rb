@@ -120,13 +120,30 @@ module Dante
       sleep(1)
     end
 
+    # Returns true if process is not running
+    def daemon_stopped?
+      ! self.daemon_running?
+    end
+
+    # Returns running for the daemonized process
+    # self.daemon_running?
+    def daemon_running?
+      return false unless File.exist?(options[:pid_path])
+      Process.kill 0, File.read(options[:pid_path]).to_i
+      true
+    rescue Errno::ESRCH
+      false
+    end
+
+    protected
+
     def parse_options
       headline = [@name, @description].compact.join(" - ")
       OptionParser.new do |opts|
         opts.summary_width = 25
         opts.banner = [headline, "\n\n",
-                      "Usage: #{@name} [-p port] [-P file] [-d] [-k]\n",
-                      "       #{@name} --help\n"].compact.join("")
+                     "Usage: #{@name} [-p port] [-P file] [-d] [-k]\n",
+                     "       #{@name} --help\n"].compact.join("")
         opts.separator ""
 
         opts.on("-p", "--port PORT", Integer, "Specify port", "(default: #{options[:port]})") do |v|
@@ -164,8 +181,6 @@ module Dante
       options
     end
 
-    protected
-
     def store_pid(pid)
       FileUtils.mkdir_p(File.dirname(options[:pid_path]))
       File.open(options[:pid_path], 'w'){|f| f.write("#{pid}\n")}
@@ -193,21 +208,6 @@ module Dante
         sleep(interval)
       end
       elapsed_seconds < timeout_seconds
-    end
-
-    # Returns true if process is not running
-    def daemon_stopped?
-      ! self.daemon_running?
-    end
-
-    # Returns running for the daemonized process
-    # self.daemon_running?
-    def daemon_running?
-      return false unless File.exist?(options[:pid_path])
-      Process.kill 0, File.read(options[:pid_path]).to_i
-      true
-    rescue Errno::ESRCH
-      false
     end
 
     def log(message)
