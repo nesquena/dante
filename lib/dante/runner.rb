@@ -28,10 +28,10 @@ module Dante
     def initialize(name, defaults={}, &block)
       @name = name
       @startup_command = block
-      @debug = defaults.delete(:debug) || true
       @options = {
         :host => '0.0.0.0',
-        :pid_path => "/var/run/#{@name}.pid"
+        :pid_path => "/var/run/#{@name}.pid",
+        :debug => true
       }.merge(defaults)
     end
 
@@ -211,7 +211,7 @@ module Dante
     end
 
     def log(message)
-      puts message if @debug
+      puts message if options[:debug]
     end
 
   end
