@@ -45,8 +45,8 @@ class TestingProcess
       @tmp = File.new(@tmp_path, 'w')
       @tmp.print "Started on #{port}!!"
       sleep(100)
-    rescue Dante::Runner::Abort
-      @tmp.print "Abort!!"
+    rescue Interrupt
+      @tmp.print "Interrupt!!"
       exit
     ensure
       @tmp.print "Closing!!"

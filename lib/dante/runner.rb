@@ -15,8 +15,7 @@ This is a utility for setting up a binary executable for a service.
 
 module Dante
   class Runner
-    # Signal to application that the process is shutting down
-    class Abort < Exception; end
+    MAX_START_TRIES = 5
 
     attr_accessor :options, :name, :description
 
@@ -29,6 +28,7 @@ module Dante
     def initialize(name, defaults={}, &block)
       @name = name
       @startup_command = block
+      @debug = defaults.delete(:debug) || true
       @options = {
         :host => '0.0.0.0',
         :pid_path => "/var/run/#{@name}.pid"
@@ -44,12 +44,14 @@ module Dante
     # Executes the runner based on options
     # @runner.execute
     # @runner.execute { ... }
-    def execute(&block)
+    def execute(opts={}, &block)
       parse_options
+      self.options.merge!(opts)
 
       if options.include?(:kill)
-        kill_pid(options[:kill] || '*')
+        self.stop
       else # create process
+        self.stop if options.include?(:restart)
         Process.euid = options[:user] if options[:user]
         Process.egid = options[:group] if options[:group]
         @startup_command = block if block_given?
@@ -57,23 +59,64 @@ module Dante
       end
     end
 
+    def daemonize
+      return log("Process is already started") if self.daemon_running? # daemon already started
+
+      # Start process
+      pid = fork do
+        exit if fork
+        Process.setsid
+        exit if fork
+        store_pid(Process.pid)
+        File.umask 0000
+        STDIN.reopen "/dev/null"
+        STDOUT.reopen "/dev/null", "a"
+        STDERR.reopen STDOUT
+        start
+      end
+      # Ensure process is running
+      if until_true(MAX_START_TRIES) { self.daemon_running? }
+        log "Daemon has started successfully"
+        true
+      else # Failed to start
+        log "Daemonized process couldn't be started"
+        false
+      end
+    end
+
     def start
-      puts "Starting #{@name} service..."
+      log "Starting #{@name} service..."
 
       trap("INT") {
-        stop
+        interrupt
         exit
       }
       trap("TERM"){
-        stop
+        interrupt
         exit
       }
 
       @startup_command.call(self.options) if @startup_command
     end
 
-    def stop
-      raise Abort
+    # Stops a daemonized process
+    def stop(kill_arg=nil)
+      if self.daemon_running?
+        kill_pid(kill_arg || options[:kill])
+        until_true(MAX_START_TRIES) { self.daemon_stopped? }
+      else # not running
+        log "No #{@name} processes are running"
+        false
+      end
+    end
+
+    def restart
+      self.stop
+      self.start
+    end
+
+    def interrupt
+      raise Interrupt
       sleep(1)
     end
 
@@ -121,38 +164,54 @@ module Dante
       options
     end
 
-    private
+    protected
 
     def store_pid(pid)
-     FileUtils.mkdir_p(File.dirname(options[:pid_path]))
-     File.open(options[:pid_path], 'w'){|f| f.write("#{pid}\n")}
+      FileUtils.mkdir_p(File.dirname(options[:pid_path]))
+      File.open(options[:pid_path], 'w'){|f| f.write("#{pid}\n")}
     end
 
-    def kill_pid(k)
+    def kill_pid(k='*')
       Dir[options[:pid_path]].each do |f|
         begin
           pid = IO.read(f).chomp.to_i
           FileUtils.rm f
           Process.kill('INT', pid)
-          puts "killed PID: #{pid} at #{f}"
+          log "Stopped PID: #{pid} at #{f}"
         rescue => e
-          puts "Failed to kill! #{k}: #{e}"
+          log "Failed to stop! #{k}: #{e}"
         end
       end
     end
 
-    def daemonize
-      pid = fork do
-        exit if fork
-        Process.setsid
-        exit if fork
-        store_pid(Process.pid)
-        File.umask 0000
-        STDIN.reopen "/dev/null"
-        STDOUT.reopen "/dev/null", "a"
-        STDERR.reopen STDOUT
-        start
+    # Runs until the block condition is met or the timeout_seconds is exceeded
+    # until_true(10) { ...return_condition... }
+    def until_true(timeout_seconds, interval=1, &block)
+      elapsed_seconds = 0
+      while elapsed_seconds < timeout_seconds && block.call != true
+        elapsed_seconds += interval
+        sleep(interval)
       end
+      elapsed_seconds < timeout_seconds
+    end
+
+    # Returns true if process is not running
+    def daemon_stopped?
+      ! self.daemon_running?
+    end
+
+    # Returns running for the daemonized process
+    # self.daemon_running?
+    def daemon_running?
+      return false unless File.exist?(options[:pid_path])
+      Process.kill 0, File.read(options[:pid_path]).to_i
+      true
+    rescue Errno::ESRCH
+      false
+    end
+
+    def log(message)
+      puts message if @debug
     end
 
   end

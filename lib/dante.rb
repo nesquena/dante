@@ -6,7 +6,7 @@ require "dante/runner"
   Dante.run("process-name") do
     begin
       # ...something here
-    rescue Abort
+    rescue Interrupt
       # ...shutdown here
     end
   end

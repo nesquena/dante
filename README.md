@@ -55,6 +55,8 @@ Be sure to properly make your bin executable:
 chmod +x bin/myapp
 ```
 
+### CLI
+
 This gives your binary several useful things for free:
 
 ```
@@ -81,7 +83,7 @@ will stop all daemonized processes for the specified pid file.
 
 Will return a useful help banner message explaining the simple usage.
 
-## Customization
+### Advanced
 
 In many cases, you will need to add custom flags/options or a custom description to your executable. You can do this
 easily by using `Dante::Runner` more explicitly:
@@ -121,6 +123,19 @@ Now you would be able to do:
 
 and the `opts` would contain the `:test` option for use in your script. In addition, help will now contain
 your customized description in the banner.
+
+You can also use dante programmatically to start, stop and restart arbitrary code:
+
+```ruby
+# daemon start
+Dante::Runner.new('gitdocs').execute(:daemonize => true, :pid_path => @pid) { something! }
+# daemon stop
+Dante::Runner.new('gitdocs').execute(:kill => true, :pid_path => @pid)
+# daemon restart
+Dante::Runner.new('gitdocs').execute(:daemonize => true, :restart => true, :pid_path => @pid) { something! }
+```
+
+so you can use dante as part of a more complex CLI executable.
 
 ## God
 

@@ -34,7 +34,7 @@ describe "dante runner" do
       sleep(1) # Wait to complete
       @output = File.read(@process.tmp_path)
       assert_match /Started on 8080!!/, @output
-      assert_match /Abort!!/, @output
+      assert_match /Interrupt!!/, @output
       assert_match /Closing!!/, @output
     end
 
@@ -44,7 +44,7 @@ describe "dante runner" do
       sleep(1) # Wait to complete
       @output = File.read(@process.tmp_path)
       assert_match /Started on 8080!!/, @output
-      assert_match /Abort!!/, @output
+      assert_match /Interrupt!!/, @output
       assert_match /Closing!!/, @output
     end
   end # daemonize
@@ -64,7 +64,7 @@ describe "dante runner" do
       sleep(1) # Wait to complete
       @output = File.read(@process.tmp_path)
       assert_match /Started on 8080!!/, @output
-      assert_match /Abort!!/, @output
+      assert_match /Interrupt!!/, @output
       assert_match /Closing!!/, @output
     end
   end # execute with block
