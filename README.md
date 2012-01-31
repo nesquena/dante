@@ -129,7 +129,7 @@ You can also use dante programmatically to start, stop and restart arbitrary cod
 
 ```ruby
 # daemon start
-Dante::Runner.new('gitdocs').execute(:daemonize => true, :pid\_path => @pid, :log\_path => @log\_path) { something! }
+Dante::Runner.new('gitdocs').execute(:daemonize => true, :pid_path => @pid, :log_path => @log_path) { something! }
 # daemon stop
 Dante::Runner.new('gitdocs').execute(:kill => true, :pid_path => @pid)
 # daemon restart
