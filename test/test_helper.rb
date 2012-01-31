@@ -53,4 +53,15 @@ class TestingProcess
       @tmp.close
     end
   end # run_b!
+
+  # For logging test
+  def run_c!(port=9091)
+    puts "Started on #{port}!!"
+    sleep(100)
+  rescue Interrupt
+    puts "Interrupt!!"
+    exit
+  ensure
+    puts "Closing!!"
+  end
 end # TestingProcess

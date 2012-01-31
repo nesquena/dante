@@ -31,6 +31,7 @@ module Dante
       @options = {
         :host => '0.0.0.0',
         :pid_path => "/var/run/#{@name}.pid",
+        :log_path => false,
         :debug => true
       }.merge(defaults)
     end
@@ -69,9 +70,7 @@ module Dante
         exit if fork
         store_pid(Process.pid)
         File.umask 0000
-        STDIN.reopen "/dev/null"
-        STDOUT.reopen "/dev/null", "a"
-        STDERR.reopen STDOUT
+        redirect_output!
         start
       end
       # Ensure process is running
@@ -158,6 +157,10 @@ module Dante
           options[:daemonize] = v
         end
 
+        opts.on("-l", "--log FILE", String, "Logfile for output") do |v|
+          options[:log_path] = v
+        end
+
         opts.on("-k", "--kill [PORT]", String, "Kill specified running daemons - leave blank to kill all.") do |v|
           options[:kill] = v
         end
@@ -197,6 +200,23 @@ module Dante
           log "Failed to stop! #{k}: #{e}"
         end
       end
+    end
+
+    # Redirect output based on log settings (reopens stdout/stderr to specified logfile)
+    # If log_path is nil, redirect to /dev/null to quiet output
+    def redirect_output!
+      if log_path = options[:log_path]
+        FileUtils.touch log_path
+        File.open(log_path, 'a') do |f|
+          $stdout.reopen(f)
+          $stderr.reopen(f)
+        end
+      else # redirect to /dev/null
+        STDIN.reopen "/dev/null"
+        STDOUT.reopen "/dev/null", "a"
+        STDERR.reopen STDOUT
+      end
+      log_path = options[:log_path] ? options[:log_path] : "/dev/null"
     end
 
     # Runs until the block condition is met or the timeout_seconds is exceeded

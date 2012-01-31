@@ -21,7 +21,7 @@ describe "dante runner" do
   describe "with daemonize flag" do
     before do
       @process = TestingProcess.new('b')
-      @run_options = { :daemonize => true, :pid_path => "/tmp/dante.pid", :port => 8080 }
+      @run_options = { :daemonize => true, :pid_path => "/tmp/dante.pid", :port => 8080, :log_path => false }
       @runner = Dante::Runner.new('test-process-2', @run_options) { |opts|
         @process.run_b!(opts[:port]) }
       @stdout = capture_stdout { @runner.execute }
@@ -49,10 +49,33 @@ describe "dante runner" do
     end
   end # daemonize
 
+  describe "with daemonize flag and log file specified" do
+    before do
+      @logfile = '/tmp/dante-logging.log'
+      FileUtils.rm(@logfile) if File.exist?(@logfile)
+      @process = TestingProcess.new('c')
+      @run_options = { :daemonize => true, :pid_path => "/tmp/dante.pid", :port => 8081, :log_path => @logfile, :debug => false }
+      @runner = Dante::Runner.new('test-process-2', @run_options) { |opts|
+        @process.run_c!(opts[:port]) }
+      @runner.execute
+      sleep(1)
+    end
+
+    it "can properly handles log to file and aborts on INT" do
+      refute_equal 0, @pid = `cat /tmp/dante.pid`.to_i
+      Process.kill "INT", @pid
+      sleep(1) # Wait to complete
+      @output = File.read(@logfile)
+      assert_match /Started on 8081!!/, @output
+      assert_match /Interrupt!!/, @output
+      assert_match /Closing!!/, @output
+    end
+  end
+
   describe "with execute accepting block" do
     before do
       @process = TestingProcess.new('b')
-      @run_options = { :daemonize => true, :pid_path => "/tmp/dante.pid", :port => 8080 }
+      @run_options = { :daemonize => true, :pid_path => "/tmp/dante.pid", :port => 8080, :log_path => false }
       @runner = Dante::Runner.new('test-process-2', @run_options)
       @stdout = capture_stdout { @runner.execute { |opts| @process.run_b!(opts[:port]) } }
       sleep(1)

@@ -66,10 +66,11 @@ This gives your binary several useful things for free:
 will start the app undaemonized in the terminal, handling trapping and stopping the process.
 
 ```
-./bin/myapp -p 8080 -d -P /var/run/myapp.pid
+./bin/myapp -p 8080 -d -P /var/run/myapp.pid -l /var/log/myapp.log
 ```
 
 will daemonize and start the process, storing the pid in the specified pid file.
+All stdout and stderr will be redirected to the specified logfile.
 
 ```
 ./bin/myapp -k -P /var/run/myapp.pid
@@ -128,7 +129,7 @@ You can also use dante programmatically to start, stop and restart arbitrary cod
 
 ```ruby
 # daemon start
-Dante::Runner.new('gitdocs').execute(:daemonize => true, :pid_path => @pid) { something! }
+Dante::Runner.new('gitdocs').execute(:daemonize => true, :pid\_path => @pid, :log\_path => @log\_path) { something! }
 # daemon stop
 Dante::Runner.new('gitdocs').execute(:kill => true, :pid_path => @pid)
 # daemon restart
