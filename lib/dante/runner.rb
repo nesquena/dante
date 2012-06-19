@@ -2,6 +2,7 @@ require 'fileutils'
 require 'optparse'
 require 'yaml'
 require 'erb'
+require 'etc'
 
 =begin
 
@@ -53,8 +54,19 @@ module Dante
         self.stop
       else # create process
         self.stop if options.include?(:restart)
-        Process.euid = options[:user] if options[:user]
-        Process.egid = options[:group] if options[:group]
+
+        # If a username, uid, groupname, or gid is passed,
+        # drop privileges accordingly.
+        if options[:user]
+          uid = options[:user].is_a?(Integer) ? options[:user] : Etc.getpwnam(options[:user]).uid
+          Process::Sys.setuid(uid)
+        end
+
+        if options[:group]
+          gid = options[:group].is_a?(Integer) ? options[:group] : Etc.getgrnam(options[:group]).gid
+          Process::Sys.setegid(gid)
+        end
+
         @startup_command = block if block_given?
         options[:daemonize] ? daemonize : start
       end
