@@ -128,8 +128,12 @@ module Dante
     end
 
     def interrupt
-      raise Interrupt
-      sleep(1)
+      begin
+        raise Interrupt
+        sleep(1)
+      rescue Interrupt
+        log "Interrupt received; stopping #{@name}"
+      end
     end
 
     # Returns true if process is not running
