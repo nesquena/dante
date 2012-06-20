@@ -220,10 +220,10 @@ module Dante
     def redirect_output!
       if log_path = options[:log_path]
         FileUtils.touch log_path
-        File.open(log_path, 'a') do |f|
-          $stdout.reopen(f)
-          $stderr.reopen(f)
-        end
+        STDOUT.reopen(log_path, 'a')
+        STDERR.reopen STDOUT
+        File.chmod(0644, log_path)
+        STDOUT.sync = true
       else # redirect to /dev/null
         STDIN.reopen "/dev/null"
         STDOUT.reopen "/dev/null", "a"
