@@ -57,14 +57,15 @@ module Dante
 
         # If a username, uid, groupname, or gid is passed,
         # drop privileges accordingly.
-        if options[:user]
-          uid = options[:user].is_a?(Integer) ? options[:user] : Etc.getpwnam(options[:user]).uid
-          Process::Sys.setuid(uid)
-        end
 
         if options[:group]
           gid = options[:group].is_a?(Integer) ? options[:group] : Etc.getgrnam(options[:group]).gid
-          Process::Sys.setegid(gid)
+          Process::GID.change_privilege(gid)
+        end
+
+        if options[:user]
+          uid = options[:user].is_a?(Integer) ? options[:user] : Etc.getpwnam(options[:user]).uid
+          Process::UID.change_privilege(uid)
         end
 
         @startup_command = block if block_given?
