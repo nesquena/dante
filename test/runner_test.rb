@@ -33,6 +33,7 @@ describe "dante runner" do
       Process.kill "INT", @pid
       sleep(1) # Wait to complete
       @output = File.read(@process.tmp_path)
+
       assert_match /Started on 8080!!/, @output
       assert_match /Interrupt!!/, @output
       assert_match /Closing!!/, @output
@@ -43,13 +44,38 @@ describe "dante runner" do
       Process.kill "TERM", @pid
       sleep(1) # Wait to complete
       @output = File.read(@process.tmp_path)
+
       assert_match /Started on 8080!!/, @output
-      assert_match /Interrupt!!/, @output
       assert_match /Closing!!/, @output
+      refute_match /Interrupt!!/, @output
     end
   end # daemonize
 
   describe "with daemonize flag and log file specified" do
+    before do
+      @logfile = '/tmp/dante-logging.log'
+      FileUtils.rm(@logfile) if File.exist?(@logfile)
+      @process = TestingProcess.new('c')
+      @run_options = { :daemonize => true, :pid_path => "/tmp/dante.pid", :port => 8081, :log_path => @logfile }
+      @runner = Dante::Runner.new('test-process-2', @run_options) { |opts|
+        @process.run_c!(opts[:port]) }
+      @runner.execute
+      sleep(1)
+    end
+
+    it "can properly handles log to file and aborts on INT" do
+      refute_equal 0, @pid = `cat /tmp/dante.pid`.to_i
+      Process.kill "INT", @pid
+      sleep(1) # Wait to complete
+      @output = File.read(@logfile)
+
+      assert_match /Started on 8081!!/, @output
+      assert_match /Interrupt!!/, @output
+      assert_match /Closing!!/, @output
+    end
+  end
+
+  describe "with daemonize flag and logging flag enabled, and debug flag disabled" do
     before do
       @logfile = '/tmp/dante-logging.log'
       FileUtils.rm(@logfile) if File.exist?(@logfile)
@@ -66,11 +92,13 @@ describe "dante runner" do
       Process.kill "INT", @pid
       sleep(1) # Wait to complete
       @output = File.read(@logfile)
+
       assert_match /Started on 8081!!/, @output
-      assert_match /Interrupt!!/, @output
+      assert_match /Interrupt received/, @output
       assert_match /Closing!!/, @output
     end
   end
+
 
   describe "with execute accepting block" do
     before do
@@ -86,6 +114,7 @@ describe "dante runner" do
       Process.kill "INT", @pid
       sleep(1) # Wait to complete
       @output = File.read(@process.tmp_path)
+
       assert_match /Started on 8080!!/, @output
       assert_match /Interrupt!!/, @output
       assert_match /Closing!!/, @output
