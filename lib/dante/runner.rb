@@ -103,8 +103,9 @@ module Dante
         interrupt
         exit
       }
+
       trap("TERM"){
-        interrupt
+        log "Trying to stop #{@name}..."
         exit
       }
 
@@ -128,12 +129,12 @@ module Dante
     end
 
     def interrupt
-      # begin
+      if options[:debug]
         raise Interrupt
-        sleep(1)
-      # rescue Interrupt
-      #  log "Interrupt received; stopping #{@name}"
-      # end
+        sleep 1
+      else
+        log "Interrupt received; stopping #{@name}"
+      end
     end
 
     # Returns true if process is not running
@@ -211,7 +212,7 @@ module Dante
         begin
           pid = IO.read(f).chomp.to_i
           FileUtils.rm f
-          Process.kill('INT', pid)
+          Process.kill('TERM', pid)
           log "Stopped PID: #{pid} at #{f}"
         rescue => e
           log "Failed to stop! #{k}: #{e}"
@@ -223,17 +224,25 @@ module Dante
     # If log_path is nil, redirect to /dev/null to quiet output
     def redirect_output!
       if log_path = options[:log_path]
+        # if the log directory doesn't exist, create it
+        FileUtils.mkdir_p File.dirname(options[:log_path]), :mode => 0755
+        # touch the log file to create it
         FileUtils.touch log_path
-        STDOUT.reopen(log_path, 'a')
-        STDERR.reopen STDOUT
+        # Set permissions on the log file
         File.chmod(0644, log_path)
-        STDOUT.sync = true
+        # Reopen $stdout (NOT +STDOUT+) to start writing to the log file
+        $stdout.reopen(log_path, 'a')
+        # Redirect $stderr to $stdout
+        $stderr.reopen $stdout
+        $stdout.sync = true
       else # redirect to /dev/null
-        STDIN.reopen "/dev/null"
-        STDOUT.reopen "/dev/null", "a"
-        STDERR.reopen STDOUT
+        # We're not bothering to sync if we're dumping to /dev/null
+        # because /dev/null doesn't care about buffered output
+        $stdin.reopen '/dev/null'
+        $stdout.reopen '/dev/null', 'a'
+        $stderr.reopen $stdout
       end
-      log_path = options[:log_path] ? options[:log_path] : "/dev/null"
+      log_path = options[:log_path] ? options[:log_path] : '/dev/null'
     end
 
     # Runs until the block condition is met or the timeout_seconds is exceeded
@@ -248,7 +257,7 @@ module Dante
     end
 
     def log(message)
-      puts message if options[:debug]
+      puts message
     end
 
   end
