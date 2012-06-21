@@ -2,6 +2,7 @@ require 'fileutils'
 require 'optparse'
 require 'yaml'
 require 'erb'
+require 'etc'
 
 =begin
 
@@ -53,8 +54,20 @@ module Dante
         self.stop
       else # create process
         self.stop if options.include?(:restart)
-        Process.euid = options[:user] if options[:user]
-        Process.egid = options[:group] if options[:group]
+
+        # If a username, uid, groupname, or gid is passed,
+        # drop privileges accordingly.
+
+        if options[:group]
+          gid = options[:group].is_a?(Integer) ? options[:group] : Etc.getgrnam(options[:group]).gid
+          Process::GID.change_privilege(gid)
+        end
+
+        if options[:user]
+          uid = options[:user].is_a?(Integer) ? options[:user] : Etc.getpwnam(options[:user]).uid
+          Process::UID.change_privilege(uid)
+        end
+
         @startup_command = block if block_given?
         options[:daemonize] ? daemonize : start
       end
@@ -115,8 +128,12 @@ module Dante
     end
 
     def interrupt
-      raise Interrupt
-      sleep(1)
+      begin
+        raise Interrupt
+        sleep(1)
+      rescue Interrupt
+        log "Interrupt received; stopping #{@name}"
+      end
     end
 
     # Returns true if process is not running
@@ -207,10 +224,10 @@ module Dante
     def redirect_output!
       if log_path = options[:log_path]
         FileUtils.touch log_path
-        File.open(log_path, 'a') do |f|
-          $stdout.reopen(f)
-          $stderr.reopen(f)
-        end
+        STDOUT.reopen(log_path, 'a')
+        STDERR.reopen STDOUT
+        File.chmod(0644, log_path)
+        STDOUT.sync = true
       else # redirect to /dev/null
         STDIN.reopen "/dev/null"
         STDOUT.reopen "/dev/null", "a"
