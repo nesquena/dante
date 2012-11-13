@@ -86,6 +86,7 @@ module Dante
         redirect_output!
         start
       end
+      Process.waitpid pid
       # Ensure process is running
       if until_true(MAX_START_TRIES) { self.daemon_running? }
         log "Daemon has started successfully"
