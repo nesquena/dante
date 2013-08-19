@@ -64,4 +64,14 @@ class TestingProcess
   ensure
     puts "Closing!!"
   end
+
+  def run_d!(data=nil)
+    begin
+      p ['The rescuer']
+      sleep 100
+    rescue SystemExit, SignalException => e
+      p ['Saved']
+    end
+  end
+
 end # TestingProcess

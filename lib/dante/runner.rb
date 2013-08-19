@@ -127,7 +127,21 @@ module Dante
     def stop(kill_arg=nil)
       if self.daemon_running?
         kill_pid(kill_arg || options[:kill])
-        until_true(MAX_START_TRIES) { self.daemon_stopped? }
+        
+        if until_true(MAX_START_TRIES) { self.daemon_stopped? }
+          FileUtils.rm options[:pid_path] # Only kill if we stopped the daemon
+          log "Daemonized process killed after term."
+        else
+          log "Failed to kill daemonized process"
+          if options[:force]
+            kill_pid(kill_arg || options[:kill], 'KILL')
+
+            if until_true(MAX_START_TRIES) { self.daemon_stopped? }
+              FileUtils.rm options[:pid_path] # Only kill if we stopped the daemon
+              log "Daemonized process killed after kill."
+            end
+          end
+        end
       else # not running
         log "No #{@name} processes are running"
         false
@@ -170,7 +184,7 @@ module Dante
       OptionParser.new do |opts|
         opts.summary_width = 25
         opts.banner = [headline, "\n\n",
-                     "Usage: #{@name} [-p port] [-P file] [-d] [-k]\n",
+                     "Usage: #{@name} [-p port] [-P file] [-d] [-k] [-f]\n",
                      "       #{@name} --help\n"].compact.join("")
         opts.separator ""
 
@@ -202,11 +216,15 @@ module Dante
           options[:group] = group
         end
 
+        opts.on("-f", "--force", String, "Force kill if SIGTERM fails") do |v|
+          options[:force] = true
+        end
+
         opts.on_tail("-?", "--help", "Display this usage information.") do
           puts "#{opts}\n"
           exit
         end
-
+        
         # Load options specified through 'with_options'
         instance_exec(opts, &@with_options) if @with_options
       end.parse!
@@ -218,13 +236,12 @@ module Dante
       File.open(options[:pid_path], 'w'){|f| f.write("#{pid}\n")}
     end
 
-    def kill_pid(k='*')
+    def kill_pid(k='*', sig='TERM')
       Dir[options[:pid_path]].each do |f|
         begin
           pid = IO.read(f).chomp.to_i
-          FileUtils.rm f
-          Process.kill('TERM', pid)
-          log "Stopped PID: #{pid} at #{f}"
+          Process.kill(sig, pid)
+          log "Sent SIG#{sig} to PID: #{pid} at #{f}"
         rescue => e
           log "Failed to stop! #{k}: #{e}"
         end
