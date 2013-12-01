@@ -66,11 +66,18 @@ This gives your binary several useful things for free:
 will start the app undaemonized in the terminal, handling trapping and stopping the process.
 
 ```
+./bin/myapp -l /var/log/myapp.log
+```
+
+will start the app undaemonized in the terminal and redirect all stdout and stderr to the specified logfile.
+
+```
 ./bin/myapp -p 8080 -d -P /var/run/myapp.pid -l /var/log/myapp.log
 ```
 
 will daemonize and start the process, storing the pid in the specified pid file.
-All stdout and stderr will be redirected to the specified logfile.
+All stdout and stderr will be redirected to the specified logfile. If no logfile is specified in daemon mode then all 
+stdout and stderr will be ignored by redirecting it to /dev/null.
 
 ```
 ./bin/myapp -k -P /var/run/myapp.pid
