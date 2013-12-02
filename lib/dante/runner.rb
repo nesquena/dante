@@ -100,6 +100,10 @@ module Dante
     def start
       log "Starting #{@name} service..."
 
+      if log_path = options[:log_path] && options[:daemonize].nil?
+         redirect_output! 
+      end
+
       trap("INT") {
         interrupt
         exit
