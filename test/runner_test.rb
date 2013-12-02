@@ -1,6 +1,25 @@
 require File.expand_path('../test_helper', __FILE__)
 
 describe "dante runner" do
+
+  describe "verify options fails" do
+    it "should bubble up exception" do
+      runner = Dante::Runner.new('test-process') {
+        raise Exception.new("should not get here!!!")
+      }
+
+      runner.verify_options_hook = lambda {
+        raise Exception.new("Look for this exception")
+      }
+
+      err = assert_raises(Exception) {
+        runner.execute
+      }
+
+      assert_equal(err.message, "Look for this exception")
+    end
+  end
+
   describe "with no daemonize" do
     before do
       @process = TestingProcess.new('a')

@@ -18,7 +18,7 @@ module Dante
   class Runner
     MAX_START_TRIES = 5
 
-    attr_accessor :options, :name, :description
+    attr_accessor :options, :name, :description, :verify_options_hook
 
     class << self
       def run(*args, &block)
@@ -49,6 +49,8 @@ module Dante
     def execute(opts={}, &block)
       parse_options
       self.options.merge!(opts)
+
+      @verify_options_hook.call() if @verify_options_hook
 
       if options.include?(:kill)
         self.stop
