@@ -4,12 +4,12 @@ describe "dante runner" do
 
   describe "verify options fails" do
     it "should bubble up exception" do
-      runner = Dante::Runner.new('test-process') {
+      runner = Dante::Runner.new('test-process', {key1:"val2"}) {
         raise Exception.new("should not get here!!!")
       }
 
-      runner.verify_options_hook = lambda {
-        raise Exception.new("Look for this exception")
+      runner.verify_options_hook = lambda { |opts|
+        raise Exception.new("Look for this exception") if(opts[:key1] != "val1")
       }
 
       err = assert_raises(Exception) {

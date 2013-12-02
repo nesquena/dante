@@ -50,7 +50,7 @@ module Dante
       parse_options
       self.options.merge!(opts)
 
-      @verify_options_hook.call() if @verify_options_hook
+      @verify_options_hook.call(self.options) if @verify_options_hook
 
       if options.include?(:kill)
         self.stop
