@@ -111,6 +111,10 @@ runner.with_options do |opts|
     options[:test] = test
   end
 end
+# Create validation hook for options
+runner.verify_options_hook = lambda { |opts|
+  raise Exception.new("Must supply test parameter") if opts[:test].nil?
+}
 # Parse command-line options and execute the process
 runner.execute do |opts|
   # opts: host, pid_path, port, daemonize, user, group
