@@ -78,8 +78,8 @@ module Dante
     def daemonize
       return log("Process is already started") if self.daemon_running? # daemon already started
 
-      if options[:log_path].nil?
-         options[:log_path] = "/var/tmp/#{@name}.log"
+      if !options[:log_path]
+         options[:log_path] = "/var/log/#{@name}.log"
       end
 
       # Start process
