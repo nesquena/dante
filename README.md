@@ -77,7 +77,7 @@ will start the app undaemonized in the terminal and redirect all stdout and stde
 
 will daemonize and start the process, storing the pid in the specified pid file.
 All stdout and stderr will be redirected to the specified logfile. If no logfile is specified in daemon mode then all 
-stdout and stderr will be ignored by redirecting it to /dev/null.
+stdout and stderr will be directed to /var/log/<myapp name>.log.
 
 ```
 ./bin/myapp -k -P /var/run/myapp.pid
