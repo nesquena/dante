@@ -78,6 +78,10 @@ module Dante
     def daemonize
       return log("Process is already started") if self.daemon_running? # daemon already started
 
+      if !options[:log_path]
+         options[:log_path] = "/var/log/#{@name}.log"
+      end
+
       # Start process
       pid = fork do
         exit if fork
@@ -182,7 +186,7 @@ module Dante
           options[:daemonize] = v
         end
 
-        opts.on("-l", "--log FILE", String, "Logfile for output") do |v|
+        opts.on("-l", "--log FILE", String, "Logfile for output", "(default: /var/log/#{@name}.log)") do |v|
           options[:log_path] = v
         end
 
