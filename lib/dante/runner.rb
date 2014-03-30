@@ -1,9 +1,3 @@
-require 'fileutils'
-require 'optparse'
-require 'yaml'
-require 'erb'
-require 'etc'
-
 =begin
 
 This is a utility for setting up a binary executable for a service.
@@ -107,7 +101,7 @@ module Dante
       log "Starting #{@name} service..."
 
       if log_path = options[:log_path] && options[:daemonize].nil?
-         redirect_output! 
+         redirect_output!
       end
 
       trap("INT") {

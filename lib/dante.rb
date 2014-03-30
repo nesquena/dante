@@ -1,6 +1,3 @@
-require "dante/version"
-require "dante/runner"
-
 =begin
 
   Dante.run("process-name") do
@@ -12,7 +9,6 @@ require "dante/runner"
   end
 
 =end
-
 module Dante
 
   # Forks a process and handles option parsing and start/stopping.
@@ -24,3 +20,6 @@ module Dante
     Runner.new(name, options, &blk).execute
   end
 end
+
+require_relative "dante/version"
+require_relative "dante/runner"
