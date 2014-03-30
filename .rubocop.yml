@@ -1,0 +1,25 @@
+AllCops:
+  Excludes:
+    - bench/**/*
+
+StringLiterals:
+  EnforcedStyle: double_quotes
+SignalException:
+  Enabled: false
+CollectionMethods:
+  PreferredMethods:
+    collect: map
+    collect!: map!
+    reduce: inject
+    detect: find
+    find_all: select
+SingleLineBlockParams:
+  Enabled: false
+OneLineConditional:
+  Enabled: false
+UnlessElse:
+  Enabled: false
+For:
+  Enabled: false
+Semicolon:
+  AllowAsExpressionSeparator: true

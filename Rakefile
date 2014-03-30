@@ -1,15 +1,21 @@
-require 'bundler/gem_tasks'
-require 'rake/testtask'
-# require 'yard'
+#!/usr/bin/env rake
+require "bundler/gem_tasks"
+require "rspec/core/rake_task"
+require "rubocop/rake_task"
+require "yard"
 
-task :test do
-  Rake::TestTask.new do |t|
-    t.libs.push "lib"
-    t.test_files = FileList[File.expand_path('../test/**/*_test.rb', __FILE__)]
-    t.verbose = true
-  end
+ENV["COVERALLS_NOISY"] = "true"
+
+desc "Check all files for style guidelines"
+Rubocop::RakeTask.new
+
+desc "Run all the tests in spec"
+RSpec::Core::RakeTask.new(:spec)
+
+desc "Generate all of the docs"
+YARD::Rake::YardocTask.new do |config|
+  config.files = Dir["lib/**/*.rb"]
 end
 
-# task :doc do
-#  YARD::CLI::Yardoc.new.run
-# end
+desc "Default: run tests and generate docs"
+task default: [ :spec, :yard, :rubocop ]
