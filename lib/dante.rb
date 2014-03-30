@@ -1,3 +1,9 @@
+require "fileutils"
+require "optparse"
+require "yaml"
+require "erb"
+require "etc"
+
 =begin
 
   Dante.run("process-name") do
