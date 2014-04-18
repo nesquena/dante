@@ -70,6 +70,56 @@ describe "dante runner" do
     end
   end # daemonize
 
+  describe "daemonize with block on sigterm" do
+    before do
+      @logfile = '/tmp/dante-logging.log'
+      FileUtils.rm(@logfile) if File.exist?(@logfile)
+      @process = TestingProcess.new('f1')
+      @run_options = { :daemonize => true, :pid_path => "/tmp/dante.pid", :log_path => @logfile }
+      @runner = Dante::Runner.new('test-process-f1', @run_options) { |opts|
+        @process.run_d! }
+      @stdout = capture_stdout { @runner.execute }
+      sleep(1)
+    end
+
+    it "cannot be stopped without force flag" do
+      refute_equal 0, @pid = `cat /tmp/dante.pid`.to_i
+      Process.kill "TERM", @pid
+      sleep(21) # Wait to complete
+      p ['a',@output,@stdout]
+      @output = File.read(@logfile)
+
+      assert_match /Trying to stop test-process/, @output
+      assert_match /Failed to kill daemonized process/, @output
+      refute_match /Daemonized process killed after kill/, @output
+    end
+  end
+
+  describe "daemonize with block on sigkill" do
+    before do
+      @logfile = '/tmp/dante-logging.log'
+      FileUtils.rm(@logfile) if File.exist?(@logfile)
+      @process = TestingProcess.new('f2')
+      @run_options = { :daemonize => true, :pid_path => "/tmp/dante.pid", :log_path => @logfile, force: true }
+      @runner = Dante::Runner.new('test-process-f2', @run_options) { |opts|
+        @process.run_d! }
+      @stdout = capture_stdout { @runner.execute }
+      sleep(1)
+    end
+
+    it "can be stopped without force flag" do
+      refute_equal 0, @pid = `cat /tmp/dante.pid`.to_i
+      Process.kill "TERM", @pid
+      sleep(21) # Wait to complete
+      @output = File.read(@logfile)
+
+      p ['b',@output,@stdout]
+      assert_match /Trying to stop test-process/, @output
+      assert_match /Failed to kill daemonized process/, @output
+      assert_match /Daemonized process killed after kill/, @output
+    end
+  end
+
   describe "with daemonize flag and log file specified" do
     before do
       @logfile = '/tmp/dante-logging.log'
