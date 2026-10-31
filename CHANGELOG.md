@@ -45,7 +45,7 @@ Changes since 0.2.0:
 - Fixed: INT and TERM are handled before the pid file is written, so a `-k` right after start goes through
   dante's handler. (#22, @nesquena)
 - The gemspec now declares the MIT license and points its homepage at github.com/nesquena/dante, and the
-  deprecated `rubyforge_project` setting is gone. (@nesquena)
+  deprecated `rubyforge_project` setting is gone. (#27, @nesquena)
 - Development: the test suite is reliable on current Ruby and minitest (mocha is no longer needed), `rake` runs
   it, and GitHub Actions runs it on Ruby 2.7 to 4.0. Reported by @balasankarc in #19. (#21, #23, @nesquena)
 
