@@ -200,6 +200,33 @@ describe "dante runner" do
     end
   end # execute with block
 
+  describe "with daemonize flag and a umask" do
+    before do
+      @original_umask = File.umask(0027)
+      @logfile = tmp_path('dante-umask.log')
+      @pid_path = tmp_path('dante.pid')
+      @created = tmp_path('created-by-daemon')
+      created = @created
+      @runner = Dante::Runner.new('test-process', :daemonize => true, :pid_path => @pid_path, :log_path => @logfile) {
+        File.write(created, "x")
+        sleep 100 }
+      @stdout = capture_stdout { @runner.execute }
+      wait_for_output(@created)
+    end
+
+    after do
+      File.umask(@original_umask)
+    end
+
+    it "creates files with the umask of the process that started it" do
+      assert_equal "640", "%o" % (File.stat(@created).mode & 0777)
+    end
+
+    it "still gives the log file mode 0644" do
+      assert_equal 0644, File.stat(@logfile).mode & 0777
+    end
+  end # umask
+
   describe "with the standard streams connected to a socket" do
     # Runs the block in a forked child whose stdin, stdout and stderr are one end of a
     # socket pair, as under Spring or Zeus. Returns the child's exit status and the

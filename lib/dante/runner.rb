@@ -79,7 +79,6 @@ module Dante
         Process.setsid
         exit if fork
         store_pid(Process.pid)
-        File.umask 0000
         redirect_output!
         start
       end
