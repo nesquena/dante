@@ -190,4 +190,4 @@ and that's all. Of course now you can also easily daemonize as well as start/sto
 
 ## Copyright
 
-Copyright © 2011 Nathan Esquenazi. See [LICENSE](https://github.com/bazaarlabs/dante/blob/master/LICENSE) for details.
+Copyright © 2011-2026 Nathan Esquenazi. See [LICENSE](https://github.com/nesquena/dante/blob/master/LICENSE) for details.
