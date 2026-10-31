@@ -651,9 +651,12 @@ describe "dante runner" do
     # Runs script with dante loaded in a separate Ruby process, passing it args, and
     # returns what it printed, without Ruby 2.7's -w warnings. A process of its own,
     # because the test harness keeps forked processes from running at_exit handlers.
+    # It runs outside Bundler's environment: it needs only dante, and bundler/setup
+    # would print git's errors where the tree is not a git checkout.
     def run_program(script, *args)
       lib = File.expand_path('../../lib', __FILE__)
-      output = IO.popen([RbConfig.ruby, '-I', lib, '-rdante', '-e', script, *args], :err => [:child, :out], &:read)
+      run = lambda { IO.popen([RbConfig.ruby, '-I', lib, '-rdante', '-e', script, *args], :err => [:child, :out], &:read) }
+      output = defined?(Bundler) ? Bundler.with_unbundled_env(&run) : run.call
       output.lines.grep_v(/: warning: /).join
     end
 
