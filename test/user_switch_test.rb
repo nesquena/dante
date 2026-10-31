@@ -31,6 +31,7 @@ describe "dante runner switching user and group" do
     error_path = tmp_path('child-error')
     pid = fork do
       error = File.open(error_path, 'w') # opened before the block switches user
+      error.sync = true # exit! below doesn't flush
       begin
         $stdout = $stderr = File.open(tmp_path('child.out'), 'w')
         Process.groups = groups
@@ -154,6 +155,23 @@ describe "dante runner switching user and group" do
     assert_equal [uid] * 4, creds[:uid]
     assert_equal [@nobody.gid] * 4, creds[:gid]
     assert_equal [@nobody.gid], creds[:groups]
+  end
+
+  it "keeps the current group when not root and given only the current user" do
+    group = begin
+      Etc.getgrgid(1)
+    rescue ArgumentError
+      skip "no group with gid 1"
+    end
+    run_in_child do
+      Dante::Runner.new('test-process').execute(:user => 'nobody', :group => group.gid) {}
+      # now nobody, with a group other than nobody's primary group
+      Dante::Runner.new('test-process').execute(:user => 'nobody', &record_status)
+    end
+    creds = credentials(File.read(@status_path))
+
+    assert_equal [@nobody.uid] * 4, creds[:uid]
+    assert_equal [group.gid] * 4, creds[:gid]
   end
 
   it "gives a user its supplementary groups from the group database" do

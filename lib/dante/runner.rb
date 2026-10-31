@@ -217,12 +217,14 @@ module Dante
       options
     end
 
-    # Switches the process to user (a name or uid) and group (a name or gid); the group
-    # defaults to the user's primary group. Changing the uid and gid leaves the
-    # supplementary groups as they were, so when running as root they are set too: to
-    # the user's own groups, or to just the process's group for a group alone or a uid
-    # with no passwd entry. Everything is looked up before anything is changed.
+    # Switches the process to user (a name or uid) and group (a name or gid). When running
+    # as root the group defaults to the user's primary group, and the supplementary groups
+    # (which changing the uid and gid leaves as they were) are set too: to the user's own
+    # groups, or to just the process's group for a group alone or a uid with no passwd
+    # entry. Otherwise only what was given changes. Everything is looked up before
+    # anything is changed.
     def switch_user(user, group)
+      root = Process.euid == 0
       passwd = if user.is_a?(Integer)
                  begin
                    Etc.getpwuid(user)
@@ -235,11 +237,11 @@ module Dante
       uid = passwd ? passwd.uid : user
       gid = if group
               group.is_a?(Integer) ? group : Etc.getgrnam(group).gid
-            elsif passwd
+            elsif passwd && root
               passwd.gid
             end
 
-      if Process.euid == 0
+      if root
         if passwd
           Process.initgroups(passwd.name, gid)
         else
