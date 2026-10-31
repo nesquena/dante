@@ -75,7 +75,8 @@ will start the app undaemonized in the terminal and redirect all stdout and stde
 ./bin/myapp -p 8080 -d -P /var/run/myapp.pid -l /var/log/myapp.log
 ```
 
-will daemonize and start the process, storing the pid in the specified pid file.
+will daemonize and start the process, storing the pid in the specified pid file. It reports the daemon as
+started once the daemon has kept running for a second, and as not started if it exits before then.
 All stdout and stderr will be redirected to the specified logfile. If no logfile is specified in daemon mode then all 
 stdout and stderr will be directed to /var/log/<myapp name>.log.
 

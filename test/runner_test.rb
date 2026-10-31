@@ -414,7 +414,76 @@ describe "dante runner" do
       assert_match(/Failed to kill daemonized process/, output)
       assert_equal "#{@foreign_pid}\n", File.read(@pid_path)
     end
+
+    it "stops waiting at once when it cannot signal it, even with :force" do
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      result, output = run_without_permission_to_signal do
+        Dante::Runner.new('test-process', :pid_path => @pid_path, :force => true).stop
+        nil
+      end
+      elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+      assert_equal [:returned, nil], result
+      assert_match(/Failed to kill daemonized process/, output)
+      refute_match(/Sent SIG/, output)
+      assert_operator elapsed, :<, Dante::Runner::MAX_START_TRIES / 2.0, "waited for a daemon it could not signal"
+      assert_equal "#{@foreign_pid}\n", File.read(@pid_path)
+    end
   end # another user's process
+
+  describe "with an empty pid file, as left by a crash between creating and writing it" do
+    before do
+      @pid_path = tmp_path('dante.pid')
+      File.write(@pid_path, "")
+    end
+
+    it "does not count as a running daemon, nor does a pid file naming no process" do
+      ["", "0\n", "-1\n"].each do |content|
+        File.write(@pid_path, content)
+        assert_equal false, Dante::Runner.new('test-process', :pid_path => @pid_path).daemon_running?, "pid file #{content.inspect}"
+      end
+    end
+
+    it "does not count a number too large for a pid as a daemon, running or to stop" do
+      ["2147483648\n", "99999999999999999999\n"].each do |content|
+        File.write(@pid_path, content)
+        runner = Dante::Runner.new('test-process', :pid_path => @pid_path)
+        assert_equal false, runner.daemon_running?, "pid file #{content.inspect}"
+        assert_equal "No test-process processes are running\n", capture_stdout { runner.stop }, "pid file #{content.inspect}"
+      end
+    end
+
+    it "starts a daemon in its place" do
+      started = tmp_path('started')
+      result = nil
+      output = capture_stdout {
+        result = Dante::Runner.new('test-process', :daemonize => true, :pid_path => @pid_path, :log_path => tmp_path('dante.log')) {
+          File.write(started, ""); sleep 100 }.execute }
+
+      assert_equal true, result
+      assert_match(/Daemon has started successfully/, output)
+      wait_for_output(started)
+      assert process_alive?(daemon_pid(@pid_path))
+    end
+
+    it "reports that no daemon is running when asked to stop, and signals nothing" do
+      # The stop runs in a child leading a process group of its own, which is all that a
+      # signal to "pid 0" (the caller's process group) could reach.
+      out_path = tmp_path('out')
+      pid = fork do
+        Process.setpgid(0, 0)
+        $stdout = File.open(out_path, 'w')
+        $stdout.sync = true
+        p Dante::Runner.new('test-process', :pid_path => @pid_path).stop
+        exit!(0)
+      end
+      Process.wait(pid)
+
+      assert_equal "No test-process processes are running\nfalse\n", File.read(out_path)
+      assert_equal 0, $?.exitstatus, "the stop ended with #{$?.inspect}"
+      assert_equal "", File.read(@pid_path)
+    end
+  end # empty pid file
 
   describe "with daemonize flag, controlling a running daemon" do
     before do
@@ -515,6 +584,156 @@ describe "dante runner" do
       refute_match(/started successfully/, output)
     end
   end # dies at once
+
+  describe "with daemonize flag, when the daemon dies right after recording its pid" do
+    it "reports that it could not be started" do
+      pid_path = tmp_path('dante.pid')
+      # After the check made before starting, checks for the daemon only once its pid is
+      # recorded, so the check falls in the moment between the daemon starting up and dying.
+      checking_runner = Class.new(Dante::Runner) do
+        define_method(:daemon_running?) do
+          if @checked_before_starting
+            deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
+            sleep 0.01 until (File.exist?(pid_path) && File.read(pid_path).to_i > 0) ||
+                             Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+          end
+          @checked_before_starting = true
+          super()
+        end
+      end
+      result = nil
+      output = capture_stdout {
+        result = checking_runner.new('test-process', :daemonize => true, :pid_path => pid_path,
+                                     :log_path => tmp_path('dante.log')) { sleep 0.2; raise "boom" }.execute }
+
+      assert_equal false, result
+      assert_match(/Daemonized process couldn't be started/, output)
+      refute_match(/started successfully/, output)
+      assert_match(/Starting test-process/, File.read(tmp_path('dante.log'))) # it did start, then died
+    end
+
+    it "removes the pid file the daemon left" do
+      pid_path = tmp_path('dante.pid')
+      result = nil
+      capture_stdout {
+        result = Dante::Runner.new('test-process', :daemonize => true, :pid_path => pid_path,
+                                   :log_path => tmp_path('dante.log')) { raise "boom" }.execute }
+
+      assert_equal false, result
+      assert_match(/Starting test-process/, File.read(tmp_path('dante.log'))) # it recorded its pid and started
+      refute File.exist?(pid_path), "the dead daemon's pid file was left behind"
+    end
+
+    it "keeps the pid file when it names another process" do
+      pid_path = tmp_path('dante.pid')
+      other = spawn('sleep', '30')
+      # The daemon records another process's pid, as if another start had replaced the
+      # pid file after this daemon wrote it.
+      other_runner = Class.new(Dante::Runner) do
+        define_method(:store_pid) { |_pid| super(other) }
+      end
+      result = nil
+      capture_stdout {
+        result = other_runner.new('test-process', :daemonize => true, :pid_path => pid_path,
+                                  :log_path => tmp_path('dante.log')) { raise "boom" }.execute }
+
+      assert_equal false, result
+      assert_equal "#{other}\n", File.read(pid_path)
+    ensure
+      if other
+        Process.kill('KILL', other)
+        Process.wait(other)
+      end
+    end
+  end # dies after recording its pid
+
+  describe "with daemonize flag, interrupted while the daemon starts up" do
+    it "leaves no zombie behind" do
+      pid_path = tmp_path('dante.pid')
+      leader_path = tmp_path('leader')
+      leader = nil
+      # The daemon records its parent, the session leader, which then waits out the
+      # grace period while the caller waits for it; that wait is interrupted.
+      interrupter = Thread.new(Thread.current) do |caller|
+        leader = wait_until { File.exist?(leader_path) && (n = File.read(leader_path).to_i) > 0 && n }
+        caller.raise(Interrupt) if leader
+      end
+      capture_stdout {
+        assert_raises(Interrupt) {
+          Dante::Runner.new('test-process', :daemonize => true, :pid_path => pid_path, :log_path => tmp_path('dante.log')) {
+            File.write("#{leader_path}.tmp", Process.ppid.to_s)
+            File.rename("#{leader_path}.tmp", leader_path)
+            sleep 100 }.execute } }
+      interrupter.join
+      assert leader, "the daemon never recorded its parent"
+
+      # A zombie still answers signal 0; a reaped process does not.
+      gone = wait_until(10) do
+        begin
+          Process.kill(0, leader)
+          false
+        rescue Errno::ESRCH
+          true
+        end
+      end
+      assert gone, "the session leader #{leader} was left as a zombie"
+    ensure
+      begin
+        Process.waitpid(leader) if leader
+      rescue Errno::ECHILD
+      end
+    end
+  end # interrupted while starting
+
+  describe "with daemonize flag, in a program of its own" do
+    # Runs script with dante loaded in a separate Ruby process, passing it args, and
+    # returns what it printed, without Ruby 2.7's -w warnings. A process of its own,
+    # because the test harness keeps forked processes from running at_exit handlers.
+    # It runs outside Bundler's environment: it needs only dante, and bundler/setup
+    # would print git's errors where the tree is not a git checkout.
+    def run_program(script, *args)
+      lib = File.expand_path('../../lib', __FILE__)
+      run = lambda { IO.popen([RbConfig.ruby, '-I', lib, '-rdante', '-e', script, *args], :err => [:child, :out], &:read) }
+      output = defined?(Bundler) ? Bundler.with_unbundled_env(&run) : run.call
+      output.lines.grep_v(/: warning: /).join
+    end
+
+    before do
+      @pid_path = tmp_path('dante.pid')
+      @logfile = tmp_path('dante.log')
+    end
+
+    it "reports a running daemon as started whatever the program's at_exit handlers do" do
+      output = run_program(<<-RUBY, @pid_path, @logfile)
+        main = Process.pid
+        at_exit { exit 1 if Process.pid != main }
+        p Dante::Runner.new('test-process', :daemonize => true, :pid_path => ARGV[0], :log_path => ARGV[1]) { sleep 30 }.execute
+      RUBY
+
+      assert_equal "Daemon has started successfully\ntrue\n", output
+      pid = daemon_pid(@pid_path)
+      Process.kill('TERM', pid)
+      wait_for_exit(pid)
+    end
+
+    it "reports whether the daemon started when the program ignores SIGCHLD" do
+      script = <<-RUBY
+        trap('CHLD', 'IGNORE')
+        p Dante::Runner.new('test-process', :daemonize => true, :pid_path => ARGV[0], :log_path => ARGV[1]) {
+          raise "boom" if ARGV[2] == 'crash'
+          sleep 30 }.execute
+      RUBY
+
+      assert_equal "Daemon has started successfully\ntrue\n", run_program(script, @pid_path, @logfile, 'run')
+      pid = daemon_pid(@pid_path)
+      Process.kill('TERM', pid)
+      wait_for_exit(pid)
+
+      crash_pid_path = tmp_path('crash.pid')
+      assert_equal "Daemonized process couldn't be started\nfalse\n", run_program(script, crash_pid_path, @logfile, 'crash')
+      refute File.exist?(crash_pid_path), "the dead daemon's pid file was left behind"
+    end
+  end # program of its own
 
   describe "with the -p option" do
     it "passes the port to the startup block as an Integer" do

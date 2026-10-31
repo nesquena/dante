@@ -17,6 +17,10 @@ This is a utility for setting up a binary executable for a service.
 module Dante
   class Runner
     MAX_START_TRIES = 5
+    # Seconds a new daemon must stay up before it counts as started.
+    # ceiling: a daemon that dies later than this is still reported as started; a
+    # readiness signal from the startup block would close that.
+    START_GRACE = 1
 
     attr_accessor :options, :name, :description, :verify_options_hook
 
@@ -73,20 +77,48 @@ module Dante
          options[:log_path] = "/var/log/#{@name}.log"
       end
 
-      # Start process
+      # Start process: a session leader forks the daemon, then exits with success only
+      # if the daemon is still running START_GRACE seconds later. As the daemon's parent
+      # it sees the daemon exit at once, where the pid file cannot tell.
       pid = fork do
-        exit if fork
-        Process.setsid
-        exit if fork
-        # Handle INT and TERM before the pid file tells the caller we have started
-        trap_signals
-        store_pid(Process.pid)
-        redirect_output!
-        start
+        started = false
+        begin
+          Process.setsid
+          daemon = fork do
+            # Handle INT and TERM before the pid file tells the caller we have started
+            trap_signals
+            store_pid(Process.pid)
+            redirect_output!
+            start
+          end
+          started = daemon_survives?(daemon)
+          remove_pid_file(daemon) unless started # the pid of a daemon that is gone
+        rescue Exception => e
+          warn "#{e.class}: #{e.message}"
+        ensure
+          # Like Process.daemon, leave without running the at_exit handlers inherited
+          # from the caller: they are the caller's, and one that exits or raises would
+          # replace this exit status.
+          exit!(started)
+        end
       end
-      Process.waitpid pid
-      # Ensure process is running
-      if until_true(MAX_START_TRIES) { self.daemon_running? }
+      waited = false
+      started = begin
+        survived = Process.waitpid2(pid)[1].success?
+        waited = true
+        # Ensure process is running
+        survived && until_true(MAX_START_TRIES) { self.daemon_running? }
+      rescue Errno::ECHILD
+        # SIGCHLD is ignored, so the session leader's status is lost. It has exited, though,
+        # removing the pid file of a daemon that died, so one look at the pid file tells.
+        waited = true
+        self.daemon_running?
+      ensure
+        # Interrupted while the session leader runs: reap it in the background, or it
+        # lingers as a zombie.
+        Process.detach(pid) unless waited
+      end
+      if started
         log "Daemon has started successfully"
         true
       else # Failed to start
@@ -110,17 +142,13 @@ module Dante
     # Stops a daemonized process
     def stop(kill_arg=nil)
       if self.daemon_running?
-        kill_pid(kill_arg || options[:kill])
-        
-        if until_true(MAX_START_TRIES) { self.daemon_stopped? }
+        if wait_for_stop(kill_pid(kill_arg || options[:kill]))
           FileUtils.rm options[:pid_path] # Only kill if we stopped the daemon
           log "Daemonized process killed after term."
         else
           log "Failed to kill daemonized process"
           if options[:force]
-            kill_pid(kill_arg || options[:kill], 'KILL')
-
-            if until_true(MAX_START_TRIES) { self.daemon_stopped? }
+            if wait_for_stop(kill_pid(kill_arg || options[:kill], 'KILL'))
               FileUtils.rm options[:pid_path] # Only kill if we stopped the daemon
               log "Daemonized process killed after kill."
             end
@@ -155,7 +183,8 @@ module Dante
     # self.daemon_running?
     def daemon_running?
       return false unless File.exist?(options[:pid_path])
-      Process.kill 0, File.read(options[:pid_path]).to_i
+      return false unless pid = read_pid(options[:pid_path])
+      Process.kill 0, pid
       true
     rescue Errno::EPERM # the process exists but belongs to another user
       true
@@ -269,16 +298,60 @@ module Dante
       File.open(options[:pid_path], 'w'){|f| f.write("#{pid}\n")}
     end
 
+    # Whether daemon, a child of this process, is still running START_GRACE seconds after
+    # it was forked. When the caller's SIGCHLD handling reaps children itself (SIGCHLD
+    # ignored, or a handler that waits for them), waitpid cannot see the daemon, and
+    # signal 0 at the end of the grace period tells instead.
+    def daemon_survives?(daemon)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + START_GRACE
+      while Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
+        return false if Process.waitpid(daemon, Process::WNOHANG)
+        sleep 0.1
+      end
+      true
+    rescue Errno::ECHILD
+      sleep [deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC), 0].max
+      begin
+        Process.kill(0, daemon)
+        true
+      rescue Errno::ESRCH
+        false
+      end
+    end
+
+    # Removes the pid file if it still holds pid (another start may have replaced it).
+    def remove_pid_file(pid)
+      File.delete(options[:pid_path]) if read_pid(options[:pid_path]) == pid
+    rescue Errno::ENOENT
+    end
+
+    # The pid in pid_file, or nil when it holds none: a pid file left empty by a crash
+    # between creating and writing it names no process (and pid 0 or a negative pid would
+    # signal a whole process group), nor does a number too large for a pid_t.
+    def read_pid(pid_file)
+      pid = File.read(pid_file).to_i
+      pid if pid > 0 && pid < 2**31
+    end
+
+    # Sends sig to the daemons, and returns whether it reached any of them.
     def kill_pid(k='*', sig='TERM')
-      Dir[options[:pid_path]].each do |f|
+      Dir[options[:pid_path]].count do |f|
         begin
-          pid = IO.read(f).chomp.to_i
+          next false unless pid = read_pid(f)
           Process.kill(sig, pid)
           log "Sent SIG#{sig} to PID: #{pid} at #{f}"
+          true
         rescue => e
           log "Failed to stop! #{k}: #{e}"
+          false
         end
-      end
+      end > 0
+    end
+
+    # Waits for the daemon to stop once a signal reached it. When none did (the daemon
+    # belongs to another user), it cannot stop, so this only checks once.
+    def wait_for_stop(signalled)
+      signalled ? until_true(MAX_START_TRIES) { self.daemon_stopped? } : self.daemon_stopped?
     end
 
     # Redirect output based on log settings (reopens stdout/stderr to specified logfile)
