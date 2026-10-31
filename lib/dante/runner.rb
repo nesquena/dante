@@ -103,12 +103,14 @@ module Dante
         end
       end
       started = begin
-        Process.waitpid2(pid)[1].success?
-      rescue Errno::ECHILD # SIGCHLD is ignored, so the session leader's status is lost: go by the pid file
-        true
+        # Ensure process is running
+        Process.waitpid2(pid)[1].success? && until_true(MAX_START_TRIES) { self.daemon_running? }
+      rescue Errno::ECHILD
+        # SIGCHLD is ignored, so the session leader's status is lost. It has exited, though,
+        # removing the pid file of a daemon that died, so one look at the pid file tells.
+        self.daemon_running?
       end
-      # Ensure process is running
-      if started && until_true(MAX_START_TRIES) { self.daemon_running? }
+      if started
         log "Daemon has started successfully"
         true
       else # Failed to start
