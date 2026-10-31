@@ -442,10 +442,11 @@ describe "dante runner" do
       output = capture_stdout {
         result = Dante::Runner.new('test-process', @run_options) { File.write(second_started, "") }.execute }
 
-      assert_equal "Process is already started\n", output
+      assert_equal ["Process is already started\n"], output.lines.grep_v(/: warning: /) # Ruby 2.7 -w warns on stderr
       assert_nil result
       assert_equal "#{@pid}\n", File.read(@pid_path)
       assert process_alive?(@pid)
+      refute File.exist?(second_started), "a second daemon ran"
     end
 
     it "stops the daemon and starts a new one with :restart" do
