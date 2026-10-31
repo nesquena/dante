@@ -80,6 +80,13 @@ All stdout and stderr will be redirected to the specified logfile. If no logfile
 stdout and stderr will be directed to /var/log/<myapp name>.log.
 
 ```
+./bin/myapp -d -u nobody -G nogroup
+```
+
+will switch to the user nobody before starting, with the group given by `-G` or, without it, the user's primary
+group. A process started as root also takes on the user's supplementary groups.
+
+```
 ./bin/myapp -k -P /var/run/myapp.pid
 ```
 

@@ -59,16 +59,7 @@ module Dante
 
         # If a username, uid, groupname, or gid is passed,
         # drop privileges accordingly.
-
-        if options[:group]
-          gid = options[:group].is_a?(Integer) ? options[:group] : Etc.getgrnam(options[:group]).gid
-          Process::GID.change_privilege(gid)
-        end
-
-        if options[:user]
-          uid = options[:user].is_a?(Integer) ? options[:user] : Etc.getpwnam(options[:user]).uid
-          Process::UID.change_privilege(uid)
-        end
+        switch_user(options[:user], options[:group]) if options[:user] || options[:group]
 
         @startup_command = block if block_given?
         options[:daemonize] ? daemonize : start
@@ -231,6 +222,39 @@ module Dante
         instance_exec(opts, &@with_options) if @with_options
       end.parse!
       options
+    end
+
+    # Switches the process to user (a name or uid) and group (a name or gid); the group
+    # defaults to the user's primary group. Changing the uid and gid leaves the
+    # supplementary groups as they were, so when running as root they are set too: to
+    # the user's own groups, or to just the process's group for a group alone or a uid
+    # with no passwd entry. Everything is looked up before anything is changed.
+    def switch_user(user, group)
+      passwd = if user.is_a?(Integer)
+                 begin
+                   Etc.getpwuid(user)
+                 rescue ArgumentError # a uid with no passwd entry
+                   nil
+                 end
+               elsif user
+                 Etc.getpwnam(user)
+               end
+      uid = passwd ? passwd.uid : user
+      gid = if group
+              group.is_a?(Integer) ? group : Etc.getgrnam(group).gid
+            elsif passwd
+              passwd.gid
+            end
+
+      if Process.euid == 0
+        if passwd
+          Process.initgroups(passwd.name, gid)
+        else
+          Process.groups = [gid || Process.egid]
+        end
+      end
+      Process::GID.change_privilege(gid) if gid
+      Process::UID.change_privilege(uid) if uid
     end
 
     def store_pid(pid)
