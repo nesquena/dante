@@ -2,7 +2,7 @@ require File.expand_path('../test_helper', __FILE__)
 
 describe "dante module" do
   before do
-    @process = TestingProcess.new('a')
+    @process = TestingProcess.new('a', @tmpdir)
   end
 
   it "can run jobs using #run method" do
@@ -10,7 +10,7 @@ describe "dante module" do
       Dante.run('test-process') { @process.run_a! }
     end
     @output = File.read(@process.tmp_path)
-    assert_match /Started/, @output
+    assert_match(/Started/, @output)
   end
 
 end
