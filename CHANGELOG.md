@@ -23,16 +23,16 @@ Changes since 0.2.0:
 - **Changed: a daemon now counts as started only if it is still running 1 second after it was forked**, so
   `-d` takes about a second longer. A daemon that exits at once (its startup block raised, or returned) is now
   reported as "Daemonized process couldn't be started" and `daemonize` returns false; before, it could be
-  reported as started. (#XXXX, @nesquena)
+  reported as started. (#24, @nesquena)
 - Fixed: output redirection when the standard streams are sockets (Spring, Zeus): output now goes to the log
   instead of raising `can't change access mode`. Reported by @antonfefilov in #20. (#22, @nesquena)
 - Fixed: a pid file naming another user's process no longer crashes with `Errno::EPERM`: starting prints "Process
   is already started", and `-k` reports that it could not stop the process and keeps the pid file. (#22, @nesquena)
 - Fixed: `-k` with `--force` on another user's process gives up at once instead of waiting 10 seconds for a
-  process it cannot signal. (#XXXX, @nesquena)
+  process it cannot signal. (#24, @nesquena)
 - Fixed: an empty pid file (left by a crash between creating and writing it), or one holding 0 or a negative
   number, counts as no daemon. Before, starting refused with "Process is already started", and `-k` sent SIGTERM
-  to its own process group, killing itself and the processes started alongside it. (#XXXX, @nesquena)
+  to its own process group, killing itself and the processes started alongside it. (#24, @nesquena)
 - Fixed: INT and TERM are handled before the pid file is written, so a `-k` right after start goes through
   dante's handler. (#22, @nesquena)
 - Development: the test suite is reliable on current Ruby and minitest (mocha is no longer needed), `rake` runs
