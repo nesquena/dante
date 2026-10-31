@@ -317,10 +317,10 @@ module Dante
 
     # The pid in pid_file, or nil when it holds none: a pid file left empty by a crash
     # between creating and writing it names no process (and pid 0 or a negative pid would
-    # signal a whole process group).
+    # signal a whole process group), nor does a number too large for a pid_t.
     def read_pid(pid_file)
       pid = File.read(pid_file).to_i
-      pid if pid > 0
+      pid if pid > 0 && pid < 2**31
     end
 
     # Sends sig to the daemons, and returns whether it reached any of them.

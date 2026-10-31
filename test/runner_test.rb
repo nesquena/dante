@@ -444,6 +444,15 @@ describe "dante runner" do
       end
     end
 
+    it "does not count a number too large for a pid as a daemon, running or to stop" do
+      ["2147483648\n", "99999999999999999999\n"].each do |content|
+        File.write(@pid_path, content)
+        runner = Dante::Runner.new('test-process', :pid_path => @pid_path)
+        assert_equal false, runner.daemon_running?, "pid file #{content.inspect}"
+        assert_equal "No test-process processes are running\n", capture_stdout { runner.stop }, "pid file #{content.inspect}"
+      end
+    end
+
     it "starts a daemon in its place" do
       started = tmp_path('started')
       result = nil

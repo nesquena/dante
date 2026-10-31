@@ -36,7 +36,8 @@ Changes since 0.2.0:
   process it cannot signal. (#24, @nesquena)
 - Fixed: an empty pid file (left by a crash between creating and writing it), or one holding 0 or a negative
   number, counts as no daemon. Before, starting refused with "Process is already started", and `-k` sent SIGTERM
-  to its own process group, killing itself and the processes started alongside it. (#24, @nesquena)
+  to its own process group, killing itself and the processes started alongside it. A number too large for a pid
+  counts as no daemon too, where it raised `RangeError`. (#24, @nesquena)
 - Fixed: daemonizing from a program that ignores SIGCHLD (`trap('CHLD', 'IGNORE')`) raised `Errno::ECHILD`; it now
   reports whether the daemon started. (#24, @nesquena)
 - Fixed: INT and TERM are handled before the pid file is written, so a `-k` right after start goes through

@@ -91,7 +91,7 @@ module DanteTestHarness
     Process.kill(0, pid)
     stat = "/proc/#{pid}/stat"
     !(File.exist?(stat) && (line = File.read(stat))[line.rindex(')') + 2] == 'Z')
-  rescue Errno::ESRCH, Errno::EPERM, Errno::ENOENT # ENOENT: reaped between the two checks
+  rescue Errno::ESRCH, Errno::EPERM, Errno::ENOENT, RangeError # ENOENT: reaped between the two checks; RangeError: no pid_t
     false
   end
 
