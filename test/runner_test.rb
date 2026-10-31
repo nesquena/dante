@@ -647,6 +647,44 @@ describe "dante runner" do
     end
   end # dies after recording its pid
 
+  describe "with daemonize flag, interrupted while the daemon starts up" do
+    it "leaves no zombie behind" do
+      pid_path = tmp_path('dante.pid')
+      leader_path = tmp_path('leader')
+      leader = nil
+      # The daemon records its parent, the session leader, which then waits out the
+      # grace period while the caller waits for it; that wait is interrupted.
+      interrupter = Thread.new(Thread.current) do |caller|
+        leader = wait_until { File.exist?(leader_path) && (n = File.read(leader_path).to_i) > 0 && n }
+        caller.raise(Interrupt) if leader
+      end
+      capture_stdout {
+        assert_raises(Interrupt) {
+          Dante::Runner.new('test-process', :daemonize => true, :pid_path => pid_path, :log_path => tmp_path('dante.log')) {
+            File.write("#{leader_path}.tmp", Process.ppid.to_s)
+            File.rename("#{leader_path}.tmp", leader_path)
+            sleep 100 }.execute } }
+      interrupter.join
+      assert leader, "the daemon never recorded its parent"
+
+      # A zombie still answers signal 0; a reaped process does not.
+      gone = wait_until(10) do
+        begin
+          Process.kill(0, leader)
+          false
+        rescue Errno::ESRCH
+          true
+        end
+      end
+      assert gone, "the session leader #{leader} was left as a zombie"
+    ensure
+      begin
+        Process.waitpid(leader) if leader
+      rescue Errno::ECHILD
+      end
+    end
+  end # interrupted while starting
+
   describe "with daemonize flag, in a program of its own" do
     # Runs script with dante loaded in a separate Ruby process, passing it args, and
     # returns what it printed, without Ruby 2.7's -w warnings. A process of its own,
