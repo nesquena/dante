@@ -604,6 +604,51 @@ describe "dante runner" do
     end
   end # dies after recording its pid
 
+  describe "with daemonize flag, in a program of its own" do
+    # Runs script with dante loaded in a separate Ruby process, passing it args, and
+    # returns what it printed, without Ruby 2.7's -w warnings. A process of its own,
+    # because the test harness keeps forked processes from running at_exit handlers.
+    def run_program(script, *args)
+      lib = File.expand_path('../../lib', __FILE__)
+      output = IO.popen([RbConfig.ruby, '-I', lib, '-rdante', '-e', script, *args], :err => [:child, :out], &:read)
+      output.lines.grep_v(/: warning: /).join
+    end
+
+    before do
+      @pid_path = tmp_path('dante.pid')
+      @logfile = tmp_path('dante.log')
+    end
+
+    it "reports a running daemon as started whatever the program's at_exit handlers do" do
+      output = run_program(<<-RUBY, @pid_path, @logfile)
+        main = Process.pid
+        at_exit { exit 1 if Process.pid != main }
+        p Dante::Runner.new('test-process', :daemonize => true, :pid_path => ARGV[0], :log_path => ARGV[1]) { sleep 30 }.execute
+      RUBY
+
+      assert_equal "Daemon has started successfully\ntrue\n", output
+      pid = daemon_pid(@pid_path)
+      Process.kill('TERM', pid)
+      wait_for_exit(pid)
+    end
+
+    it "reports whether the daemon started when the program ignores SIGCHLD" do
+      script = <<-RUBY
+        trap('CHLD', 'IGNORE')
+        p Dante::Runner.new('test-process', :daemonize => true, :pid_path => ARGV[0], :log_path => ARGV[1]) {
+          raise "boom" if ARGV[2] == 'crash'
+          sleep 30 }.execute
+      RUBY
+
+      assert_equal "Daemon has started successfully\ntrue\n", run_program(script, @pid_path, @logfile, 'run')
+      pid = daemon_pid(@pid_path)
+      Process.kill('TERM', pid)
+      wait_for_exit(pid)
+
+      assert_equal "Daemonized process couldn't be started\nfalse\n", run_program(script, tmp_path('crash.pid'), @logfile, 'crash')
+    end
+  end # program of its own
+
   describe "with the -p option" do
     it "passes the port to the startup block as an Integer" do
       ARGV.replace(['-p', '1234'])

@@ -81,19 +81,33 @@ module Dante
       # if the daemon is still running START_GRACE seconds later. As the daemon's parent
       # it sees the daemon exit at once, where the pid file cannot tell.
       pid = fork do
-        Process.setsid
-        daemon = fork do
-          # Handle INT and TERM before the pid file tells the caller we have started
-          trap_signals
-          store_pid(Process.pid)
-          redirect_output!
-          start
+        started = false
+        begin
+          Process.setsid
+          daemon = fork do
+            # Handle INT and TERM before the pid file tells the caller we have started
+            trap_signals
+            store_pid(Process.pid)
+            redirect_output!
+            start
+          end
+          started = daemon_survives?(daemon)
+        rescue Exception => e
+          warn "#{e.class}: #{e.message}"
+        ensure
+          # Like Process.daemon, leave without running the at_exit handlers inherited
+          # from the caller: they are the caller's, and one that exits or raises would
+          # replace this exit status.
+          exit!(started)
         end
-        exit !until_true(START_GRACE, 0.1) { !Process.waitpid(daemon, Process::WNOHANG).nil? }
       end
-      _, status = Process.waitpid2(pid)
+      started = begin
+        Process.waitpid2(pid)[1].success?
+      rescue Errno::ECHILD # SIGCHLD is ignored, so the session leader's status is lost: go by the pid file
+        true
+      end
       # Ensure process is running
-      if status.success? && until_true(MAX_START_TRIES) { self.daemon_running? }
+      if started && until_true(MAX_START_TRIES) { self.daemon_running? }
         log "Daemon has started successfully"
         true
       else # Failed to start
@@ -271,6 +285,27 @@ module Dante
     def store_pid(pid)
       FileUtils.mkdir_p(File.dirname(options[:pid_path]))
       File.open(options[:pid_path], 'w'){|f| f.write("#{pid}\n")}
+    end
+
+    # Whether daemon, a child of this process, is still running START_GRACE seconds after
+    # it was forked. When the caller's SIGCHLD handling reaps children itself (SIGCHLD
+    # ignored, or a handler that waits for them), waitpid cannot see the daemon, and
+    # signal 0 at the end of the grace period tells instead.
+    def daemon_survives?(daemon)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + START_GRACE
+      while Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
+        return false if Process.waitpid(daemon, Process::WNOHANG)
+        sleep 0.1
+      end
+      true
+    rescue Errno::ECHILD
+      sleep [deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC), 0].max
+      begin
+        Process.kill(0, daemon)
+        true
+      rescue Errno::ESRCH
+        false
+      end
     end
 
     # The pid in pid_file, or nil when it holds none: a pid file left empty by a crash

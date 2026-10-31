@@ -24,6 +24,10 @@ Changes since 0.2.0:
   `-d` takes about a second longer. A daemon that exits at once (its startup block raised, or returned) is now
   reported as "Daemonized process couldn't be started" and `daemonize` returns false; before, it could be
   reported as started. (#24, @nesquena)
+- **Changed: the process between the caller and the daemon no longer runs the program's `at_exit` handlers**; it
+  leaves with `exit!`, as Ruby's `Process.daemon` does. They used to run in the two intermediate processes right
+  after the fork, so a cleanup handler (stripe-ruby-mock's `kill_server`, say) ran there too. Handlers still run in
+  the caller and in the daemon; nothing to do unless you relied on that extra run. (#24, @nesquena)
 - Fixed: output redirection when the standard streams are sockets (Spring, Zeus): output now goes to the log
   instead of raising `can't change access mode`. Reported by @antonfefilov in #20. (#22, @nesquena)
 - Fixed: a pid file naming another user's process no longer crashes with `Errno::EPERM`: starting prints "Process
@@ -33,6 +37,8 @@ Changes since 0.2.0:
 - Fixed: an empty pid file (left by a crash between creating and writing it), or one holding 0 or a negative
   number, counts as no daemon. Before, starting refused with "Process is already started", and `-k` sent SIGTERM
   to its own process group, killing itself and the processes started alongside it. (#24, @nesquena)
+- Fixed: daemonizing from a program that ignores SIGCHLD (`trap('CHLD', 'IGNORE')`) raised `Errno::ECHILD`; it now
+  reports whether the daemon started. (#24, @nesquena)
 - Fixed: INT and TERM are handled before the pid file is written, so a `-k` right after start goes through
   dante's handler. (#22, @nesquena)
 - Development: the test suite is reliable on current Ruby and minitest (mocha is no longer needed), `rake` runs
