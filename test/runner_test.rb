@@ -414,7 +414,53 @@ describe "dante runner" do
       assert_match(/Failed to kill daemonized process/, output)
       assert_equal "#{@foreign_pid}\n", File.read(@pid_path)
     end
+
   end # another user's process
+
+  describe "with an empty pid file, as left by a crash between creating and writing it" do
+    before do
+      @pid_path = tmp_path('dante.pid')
+      File.write(@pid_path, "")
+    end
+
+    it "does not count as a running daemon, nor does a pid file naming no process" do
+      ["", "0\n", "-1\n"].each do |content|
+        File.write(@pid_path, content)
+        assert_equal false, Dante::Runner.new('test-process', :pid_path => @pid_path).daemon_running?, "pid file #{content.inspect}"
+      end
+    end
+
+    it "starts a daemon in its place" do
+      started = tmp_path('started')
+      result = nil
+      output = capture_stdout {
+        result = Dante::Runner.new('test-process', :daemonize => true, :pid_path => @pid_path, :log_path => tmp_path('dante.log')) {
+          File.write(started, ""); sleep 100 }.execute }
+
+      assert_equal true, result
+      assert_match(/Daemon has started successfully/, output)
+      wait_for_output(started)
+      assert process_alive?(daemon_pid(@pid_path))
+    end
+
+    it "reports that no daemon is running when asked to stop, and signals nothing" do
+      # The stop runs in a child leading a process group of its own, which is all that a
+      # signal to "pid 0" (the caller's process group) could reach.
+      out_path = tmp_path('out')
+      pid = fork do
+        Process.setpgid(0, 0)
+        $stdout = File.open(out_path, 'w')
+        $stdout.sync = true
+        p Dante::Runner.new('test-process', :pid_path => @pid_path).stop
+        exit!(0)
+      end
+      Process.wait(pid)
+
+      assert_equal "No test-process processes are running\nfalse\n", File.read(out_path)
+      assert_equal 0, $?.exitstatus, "the stop ended with #{$?.inspect}"
+      assert_equal "", File.read(@pid_path)
+    end
+  end # empty pid file
 
   describe "with daemonize flag, controlling a running daemon" do
     before do

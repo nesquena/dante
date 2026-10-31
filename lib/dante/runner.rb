@@ -155,7 +155,8 @@ module Dante
     # self.daemon_running?
     def daemon_running?
       return false unless File.exist?(options[:pid_path])
-      Process.kill 0, File.read(options[:pid_path]).to_i
+      return false unless pid = read_pid(options[:pid_path])
+      Process.kill 0, pid
       true
     rescue Errno::EPERM # the process exists but belongs to another user
       true
@@ -269,10 +270,18 @@ module Dante
       File.open(options[:pid_path], 'w'){|f| f.write("#{pid}\n")}
     end
 
+    # The pid in pid_file, or nil when it holds none: a pid file left empty by a crash
+    # between creating and writing it names no process (and pid 0 or a negative pid would
+    # signal a whole process group).
+    def read_pid(pid_file)
+      pid = File.read(pid_file).to_i
+      pid if pid > 0
+    end
+
     def kill_pid(k='*', sig='TERM')
       Dir[options[:pid_path]].each do |f|
         begin
-          pid = IO.read(f).chomp.to_i
+          next unless pid = read_pid(f)
           Process.kill(sig, pid)
           log "Sent SIG#{sig} to PID: #{pid} at #{f}"
         rescue => e
