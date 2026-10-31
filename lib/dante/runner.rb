@@ -92,6 +92,7 @@ module Dante
             start
           end
           started = daemon_survives?(daemon)
+          remove_pid_file(daemon) unless started # the pid of a daemon that is gone
         rescue Exception => e
           warn "#{e.class}: #{e.message}"
         ensure
@@ -306,6 +307,12 @@ module Dante
       rescue Errno::ESRCH
         false
       end
+    end
+
+    # Removes the pid file if it still holds pid (another start may have replaced it).
+    def remove_pid_file(pid)
+      File.delete(options[:pid_path]) if read_pid(options[:pid_path]) == pid
+    rescue Errno::ENOENT
     end
 
     # The pid in pid_file, or nil when it holds none: a pid file left empty by a crash

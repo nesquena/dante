@@ -602,6 +602,40 @@ describe "dante runner" do
       refute_match(/started successfully/, output)
       assert_match(/Starting test-process/, File.read(tmp_path('dante.log'))) # it did start, then died
     end
+
+    it "removes the pid file the daemon left" do
+      pid_path = tmp_path('dante.pid')
+      result = nil
+      capture_stdout {
+        result = Dante::Runner.new('test-process', :daemonize => true, :pid_path => pid_path,
+                                   :log_path => tmp_path('dante.log')) { raise "boom" }.execute }
+
+      assert_equal false, result
+      assert_match(/Starting test-process/, File.read(tmp_path('dante.log'))) # it recorded its pid and started
+      refute File.exist?(pid_path), "the dead daemon's pid file was left behind"
+    end
+
+    it "keeps the pid file when it names another process" do
+      pid_path = tmp_path('dante.pid')
+      other = spawn('sleep', '30')
+      # The daemon records another process's pid, as if another start had replaced the
+      # pid file after this daemon wrote it.
+      other_runner = Class.new(Dante::Runner) do
+        define_method(:store_pid) { |_pid| super(other) }
+      end
+      result = nil
+      capture_stdout {
+        result = other_runner.new('test-process', :daemonize => true, :pid_path => pid_path,
+                                  :log_path => tmp_path('dante.log')) { raise "boom" }.execute }
+
+      assert_equal false, result
+      assert_equal "#{other}\n", File.read(pid_path)
+    ensure
+      if other
+        Process.kill('KILL', other)
+        Process.wait(other)
+      end
+    end
   end # dies after recording its pid
 
   describe "with daemonize flag, in a program of its own" do

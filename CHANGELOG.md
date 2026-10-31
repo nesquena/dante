@@ -22,8 +22,8 @@ Changes since 0.2.0:
   `File.umask` in the startup block. The log file stays 0644. (#22, @nesquena)
 - **Changed: a daemon now counts as started only if it is still running 1 second after it was forked**, so
   `-d` takes about a second longer. A daemon that exits at once (its startup block raised, or returned) is now
-  reported as "Daemonized process couldn't be started" and `daemonize` returns false; before, it could be
-  reported as started. (#24, @nesquena)
+  reported as "Daemonized process couldn't be started", `daemonize` returns false, and the pid file it left is
+  removed; before, it could be reported as started, and its stale pid stayed in the pid file. (#24, @nesquena)
 - **Changed: the process between the caller and the daemon no longer runs the program's `at_exit` handlers**; it
   leaves with `exit!`, as Ruby's `Process.daemon` does. They used to run in the two intermediate processes right
   after the fork, so a cleanup handler (stripe-ruby-mock's `kill_server`, say) ran there too. Handlers still run in
