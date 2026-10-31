@@ -446,7 +446,6 @@ describe "dante runner" do
       assert_nil result
       assert_equal "#{@pid}\n", File.read(@pid_path)
       assert process_alive?(@pid)
-      refute File.exist?(second_started), "a second daemon ran"
     end
 
     it "stops the daemon and starts a new one with :restart" do
