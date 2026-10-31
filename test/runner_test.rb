@@ -200,6 +200,38 @@ describe "dante runner" do
     end
   end # execute with block
 
+  describe "with daemonize flag, stopped while starting up" do
+    before do
+      # Holds the daemon at its "Starting" message, after its pid file is written and
+      # before its startup block runs, and shows that it got there by creating @starting.
+      # (It holds before writing the message, so the TERM below never lands mid-write.)
+      starting = @starting = tmp_path('starting')
+      slow_runner = Class.new(Dante::Runner) do
+        define_method(:log) do |message|
+          if message.start_with?("Starting")
+            File.write(starting, "")
+            sleep 10
+          end
+          super(message)
+        end
+      end
+      @logfile = tmp_path('dante-starting.log')
+      @pid_path = tmp_path('dante.pid')
+      @runner = slow_runner.new('test-process', :daemonize => true, :pid_path => @pid_path, :log_path => @logfile) { sleep 100 }
+      @stdout = capture_stdout { @runner.execute }
+    end
+
+    it "stops through its TERM handler once it has reported starting" do
+      assert_match(/Daemon has started successfully/, @stdout)
+      @pid = daemon_pid(@pid_path)
+      wait_for_output(@starting)
+      Process.kill "TERM", @pid
+      wait_for_exit(@pid)
+
+      assert_match(/Trying to stop test-process/, File.read(@logfile))
+    end
+  end # stopped while starting up
+
   describe "with daemonize flag and a umask" do
     before do
       @original_umask = File.umask(0027)

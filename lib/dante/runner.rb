@@ -78,6 +78,8 @@ module Dante
         exit if fork
         Process.setsid
         exit if fork
+        # Handle INT and TERM before the pid file tells the caller we have started
+        trap_signals
         store_pid(Process.pid)
         redirect_output!
         start
@@ -100,15 +102,7 @@ module Dante
          redirect_output! 
       end
 
-      trap("INT") {
-        interrupt
-        exit
-      }
-
-      trap("TERM"){
-        log "Trying to stop #{@name}..."
-        exit
-      }
+      trap_signals
 
       @startup_command.call(self.options) if @startup_command
     end
@@ -254,6 +248,18 @@ module Dante
       end
       Process::GID.change_privilege(gid) if gid
       Process::UID.change_privilege(uid) if uid
+    end
+
+    def trap_signals
+      trap("INT") {
+        interrupt
+        exit
+      }
+
+      trap("TERM"){
+        log "Trying to stop #{@name}..."
+        exit
+      }
     end
 
     def store_pid(pid)
