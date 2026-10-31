@@ -173,6 +173,8 @@ module Dante
       return false unless File.exist?(options[:pid_path])
       Process.kill 0, File.read(options[:pid_path]).to_i
       true
+    rescue Errno::EPERM # the process exists but belongs to another user
+      true
     rescue Errno::ESRCH
       false
     end

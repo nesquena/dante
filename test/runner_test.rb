@@ -264,6 +264,98 @@ describe "dante runner" do
     end
   end # socket streams
 
+  describe "with the pid file naming a process of another user" do
+    before do
+      @pid_path = tmp_path('dante.pid')
+      if Process.euid == 0
+        # A process of root's; the blocks below run as nobody.
+        @foreign_pid = @sleeper = spawn('sleep', '60')
+      else
+        @foreign_pid = 1
+        begin
+          Process.kill(0, @foreign_pid)
+          skip "pid #{@foreign_pid} can be signalled, so there is no process of another user to name"
+        rescue Errno::EPERM
+        end
+      end
+      File.write(@pid_path, "#{@foreign_pid}\n")
+      File.chmod(0755, @tmpdir)
+      File.chmod(0644, @pid_path)
+    end
+
+    after do
+      FileUtils.rm_f(@pid_path) if @pid_path
+      if @sleeper
+        Process.kill('KILL', @sleeper)
+        Process.wait(@sleeper)
+      end
+    end
+
+    # Runs the block in a forked child that may not signal @foreign_pid (as nobody, when
+    # the tests run as root). Returns what the block returned or raised, and what it
+    # printed.
+    def run_without_permission_to_signal
+      out_path = tmp_path('out')
+      reader, writer = IO.pipe
+      pid = fork do
+        reader.close
+        $stdout = File.open(out_path, 'w')
+        $stdout.sync = true
+        result = begin
+          if Process.euid == 0
+            nobody = Etc.getpwnam('nobody')
+            Process.groups = [nobody.gid]
+            Process::GID.change_privilege(nobody.gid)
+            Process::UID.change_privilege(nobody.uid)
+          end
+          raise "still root" if Process.euid == 0
+          [:returned, yield]
+        rescue Exception => e
+          [:raised, "#{e.class}: #{e.message}"]
+        end
+        writer.write(Marshal.dump(result))
+        exit!(0)
+      end
+      writer.close
+      Process.wait(pid)
+      [Marshal.load(reader.read), File.read(out_path)]
+    ensure
+      reader.close if reader && !reader.closed?
+    end
+
+    it "reports the daemon as running" do
+      result, _output = run_without_permission_to_signal do
+        Dante::Runner.new('test-process', :pid_path => @pid_path).daemon_running?
+      end
+
+      assert_equal [:returned, true], result
+    end
+
+    it "does not start a second daemon" do
+      result, output = run_without_permission_to_signal do
+        Dante::Runner.new('test-process', :daemonize => true, :pid_path => @pid_path, :log_path => tmp_path('dante.log')) {
+          raise "should not get here" }.execute
+        nil
+      end
+
+      assert_equal [:returned, nil], result
+      assert_equal "Process is already started\n", output
+    end
+
+    it "reports that it could not stop it with -k, and keeps the pid file" do
+      result, output = run_without_permission_to_signal do
+        ARGV.replace(['-k', '-P', @pid_path])
+        Dante::Runner.new('test-process').execute
+        nil
+      end
+
+      assert_equal [:returned, nil], result
+      assert_match(/Failed to stop! : Operation not permitted/, output)
+      assert_match(/Failed to kill daemonized process/, output)
+      assert_equal "#{@foreign_pid}\n", File.read(@pid_path)
+    end
+  end # another user's process
+
   describe "with parsing options" do
     before do
       ARGV.replace(['-t test_text'])
