@@ -78,6 +78,7 @@ describe "dante runner" do
       assert_match(/Daemonized process killed after term/, @stop_output)
       refute File.exist?(@pid_path), "pid file left behind after stop"
       assert_match(/Closing!!/, File.read(@process.tmp_path))
+      refute_match(/Interrupt!!/, File.read(@process.tmp_path)) # stopped with TERM, not INT
     end
   end # daemonize
 

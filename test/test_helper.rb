@@ -67,6 +67,7 @@ module DanteTestHarness
   def daemon_pid(pid_path)
     pid = wait_until { File.exist?(pid_path) && (n = File.read(pid_path).to_i) > 0 && n }
     assert pid, "no pid written to #{pid_path}"
+    (@daemon_pids ||= []) << pid # stopped in teardown even if the pid file is gone by then
     pid
   end
 
@@ -89,19 +90,21 @@ module DanteTestHarness
   def process_alive?(pid)
     Process.kill(0, pid)
     stat = "/proc/#{pid}/stat"
-    !(File.exist?(stat) && File.read(stat)[/\) (\S)/, 1] == 'Z')
-  rescue Errno::ESRCH, Errno::EPERM
+    !(File.exist?(stat) && (line = File.read(stat))[line.rindex(')') + 2] == 'Z')
+  rescue Errno::ESRCH, Errno::EPERM, Errno::ENOENT # ENOENT: reaped between the two checks
     false
   end
 
-  # Stops every daemon whose pid file is in this test's directory, even when the test
-  # failed: SIGTERM first, then SIGKILL for daemons that trap SIGTERM.
+  # Stops every daemon whose pid file is in this test's directory, or whose pid the test
+  # read with daemon_pid, even when the test failed: SIGTERM first, then SIGKILL for
+  # daemons that trap SIGTERM.
   # ceiling: a pid file left by a daemon that already exited is trusted while its pid is
   # alive, so a pid reused within the test's lifetime would be signalled; checking the
   # process start time in /proc would rule that out.
   def stop_daemons
-    Dir[File.join(@tmpdir, '**', '*.pid')].each do |pid_file|
-      pid = File.read(pid_file).to_i
+    pid_files = Dir[File.join(@tmpdir, '**', '*.pid')]
+    pids = pid_files.map { |f| [File.read(f).to_i, f] } + Array(@daemon_pids).map { |p| [p, 'daemon_pid'] }
+    pids.uniq { |pid, _| pid }.each do |pid, pid_file|
       begin
         next unless pid > 0 && process_alive?(pid)
         %w(TERM KILL).each do |sig|
