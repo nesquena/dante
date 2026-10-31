@@ -26,3 +26,5 @@ jobs:
         bundler-cache: true # runs 'bundle install' and caches installed gems automatically
     - name: Run tests
       run: bundle exec rake test
+    - name: Run the user and group switching tests as root
+      run: sudo -E env "PATH=$PATH" bundle exec ruby -Ilib -Itest test/user_switch_test.rb

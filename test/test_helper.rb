@@ -73,7 +73,7 @@ module DanteTestHarness
 
   # Waits until a daemon has reached its startup block, shown by it creating path (and
   # writing pattern to it). Runner#daemonize returns once the pid file exists, before the
-  # daemon has installed its INT and TERM handlers.
+  # daemon has run its startup block.
   def wait_for_output(path, pattern = //)
     assert wait_until { File.exist?(path) && File.read(path) =~ pattern }, "#{path} never matched #{pattern.inspect}"
   end

@@ -1,4 +1,5 @@
 require File.expand_path('../test_helper', __FILE__)
+require 'socket'
 
 describe "dante runner" do
 
@@ -199,6 +200,221 @@ describe "dante runner" do
       assert_match(/Closing!!/, @output)
     end
   end # execute with block
+
+  describe "with daemonize flag, stopped while starting up" do
+    before do
+      # Holds the daemon at its "Starting" message, after its pid file is written and
+      # before its startup block runs, and shows that it got there by creating @starting.
+      # (It holds before writing the message, so the TERM below never lands mid-write.)
+      starting = @starting = tmp_path('starting')
+      slow_runner = Class.new(Dante::Runner) do
+        define_method(:log) do |message|
+          if message.start_with?("Starting")
+            File.write(starting, "")
+            sleep 10
+          end
+          super(message)
+        end
+      end
+      @logfile = tmp_path('dante-starting.log')
+      @pid_path = tmp_path('dante.pid')
+      @runner = slow_runner.new('test-process', :daemonize => true, :pid_path => @pid_path, :log_path => @logfile) { sleep 100 }
+      @stdout = capture_stdout { @runner.execute }
+    end
+
+    it "stops through its TERM handler once it has reported starting" do
+      assert_match(/Daemon has started successfully/, @stdout)
+      @pid = daemon_pid(@pid_path)
+      wait_for_output(@starting)
+      Process.kill "TERM", @pid
+      wait_for_exit(@pid)
+
+      assert_match(/Trying to stop test-process/, File.read(@logfile))
+    end
+  end # stopped while starting up
+
+  describe "with daemonize flag and a umask" do
+    before do
+      @original_umask = File.umask(0027)
+      @logfile = tmp_path('dante-umask.log')
+      @pid_path = tmp_path('dante.pid')
+      @created = tmp_path('created-by-daemon')
+      created = @created
+      @runner = Dante::Runner.new('test-process', :daemonize => true, :pid_path => @pid_path, :log_path => @logfile) {
+        File.write(created, "x")
+        sleep 100 }
+      @stdout = capture_stdout { @runner.execute }
+      wait_for_output(@created)
+    end
+
+    after do
+      File.umask(@original_umask)
+    end
+
+    it "creates files with the umask of the process that started it" do
+      assert_equal "640", "%o" % (File.stat(@created).mode & 0777)
+    end
+
+    it "still gives the log file mode 0644" do
+      assert_equal 0644, File.stat(@logfile).mode & 0777
+    end
+  end # umask
+
+  describe "with the standard streams connected to a socket" do
+    # Runs the block in a forked child whose stdin, stdout and stderr are one end of a
+    # socket pair, as under Spring or Zeus. Returns the child's exit status and the
+    # error it raised, if any. The error goes through a file rather than a pipe, which
+    # a daemon started by the block would hold open.
+    def run_with_socket_streams
+      error_path = tmp_path('child-error')
+      pid = fork do
+        begin
+          socket, _peer = UNIXSocket.pair
+          [STDIN, STDOUT, STDERR].each { |io| io.reopen(socket) }
+          $stdin, $stdout, $stderr = STDIN, STDOUT, STDERR
+          yield
+        rescue Exception => e
+          File.write(error_path, "#{e.class}: #{e.message}")
+          exit!(1)
+        end
+        exit!(0)
+      end
+      Process.wait(pid)
+      [$?.exitstatus, File.exist?(error_path) ? File.read(error_path) : ""]
+    end
+
+    def null_device?(io)
+      io.stat.chardev? && io.stat.rdev == File.stat(File::NULL).rdev
+    end
+
+    it "appends to the log file when run in the foreground" do
+      @logfile = tmp_path('dante-socket.log')
+      File.write(@logfile, "earlier line\n")
+      status, error = run_with_socket_streams do
+        Dante::Runner.new('test-process', :log_path => @logfile) { puts "Started" }.execute
+      end
+
+      assert_equal [0, ""], [status, error]
+      assert_equal "earlier line\nStarted\n", File.read(@logfile)
+      assert_equal 0644, File.stat(@logfile).mode & 0777
+    end
+
+    it "logs to the log file when daemonized" do
+      @logfile = tmp_path('dante-socket.log')
+      @pid_path = tmp_path('dante.pid')
+      @process = TestingProcess.new('c', @tmpdir)
+      status, error = run_with_socket_streams do
+        Dante::Runner.new('test-process', :daemonize => true, :pid_path => @pid_path, :log_path => @logfile) {
+          @process.run_c!(8082) }.execute
+      end
+
+      assert_equal [0, ""], [status, error]
+      wait_for_output(@logfile, /Started on 8082!!/)
+      assert_equal 0644, File.stat(@logfile).mode & 0777
+    end
+
+    it "redirects all three streams to /dev/null without a log file" do
+      status, error = run_with_socket_streams do
+        Dante::Runner.new('test-process', :log_path => false).send(:redirect_output!)
+        streams = [STDIN, STDOUT, STDERR]
+        raise "not redirected to /dev/null: #{streams.reject { |io| null_device?(io) }.map(&:fileno)}" unless streams.all? { |io| null_device?(io) }
+      end
+
+      assert_equal [0, ""], [status, error]
+    end
+  end # socket streams
+
+  describe "with the pid file naming a process of another user" do
+    before do
+      @pid_path = tmp_path('dante.pid')
+      if Process.euid == 0
+        # A process of root's; the blocks below run as nobody.
+        @foreign_pid = @sleeper = spawn('sleep', '60')
+      else
+        @foreign_pid = 1
+        begin
+          Process.kill(0, @foreign_pid)
+          skip "pid #{@foreign_pid} can be signalled, so there is no process of another user to name"
+        rescue Errno::EPERM
+        end
+      end
+      File.write(@pid_path, "#{@foreign_pid}\n")
+      File.chmod(0755, @tmpdir)
+      File.chmod(0644, @pid_path)
+    end
+
+    after do
+      FileUtils.rm_f(@pid_path) if @pid_path
+      if @sleeper
+        Process.kill('KILL', @sleeper)
+        Process.wait(@sleeper)
+      end
+    end
+
+    # Runs the block in a forked child that may not signal @foreign_pid (as nobody, when
+    # the tests run as root). Returns what the block returned or raised, and what it
+    # printed.
+    def run_without_permission_to_signal
+      out_path = tmp_path('out')
+      reader, writer = IO.pipe
+      pid = fork do
+        reader.close
+        $stdout = File.open(out_path, 'w')
+        $stdout.sync = true
+        result = begin
+          if Process.euid == 0
+            nobody = Etc.getpwnam('nobody')
+            Process.groups = [nobody.gid]
+            Process::GID.change_privilege(nobody.gid)
+            Process::UID.change_privilege(nobody.uid)
+          end
+          raise "still root" if Process.euid == 0
+          [:returned, yield]
+        rescue Exception => e
+          [:raised, "#{e.class}: #{e.message}"]
+        end
+        writer.write(Marshal.dump(result))
+        exit!(0)
+      end
+      writer.close
+      Process.wait(pid)
+      [Marshal.load(reader.read), File.read(out_path)]
+    ensure
+      reader.close if reader && !reader.closed?
+    end
+
+    it "reports the daemon as running" do
+      result, _output = run_without_permission_to_signal do
+        Dante::Runner.new('test-process', :pid_path => @pid_path).daemon_running?
+      end
+
+      assert_equal [:returned, true], result
+    end
+
+    it "does not start a second daemon" do
+      result, output = run_without_permission_to_signal do
+        Dante::Runner.new('test-process', :daemonize => true, :pid_path => @pid_path, :log_path => tmp_path('dante.log')) {
+          raise "should not get here" }.execute
+        nil
+      end
+
+      assert_equal [:returned, nil], result
+      assert_equal "Process is already started\n", output
+    end
+
+    it "reports that it could not stop it with -k, and keeps the pid file" do
+      result, output = run_without_permission_to_signal do
+        ARGV.replace(['-k', '-P', @pid_path])
+        Dante::Runner.new('test-process').execute
+        nil
+      end
+
+      assert_equal [:returned, nil], result
+      assert_match(/Failed to stop! : Operation not permitted/, output)
+      assert_match(/Failed to kill daemonized process/, output)
+      assert_equal "#{@foreign_pid}\n", File.read(@pid_path)
+    end
+  end # another user's process
 
   describe "with parsing options" do
     before do

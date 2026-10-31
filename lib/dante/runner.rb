@@ -59,16 +59,7 @@ module Dante
 
         # If a username, uid, groupname, or gid is passed,
         # drop privileges accordingly.
-
-        if options[:group]
-          gid = options[:group].is_a?(Integer) ? options[:group] : Etc.getgrnam(options[:group]).gid
-          Process::GID.change_privilege(gid)
-        end
-
-        if options[:user]
-          uid = options[:user].is_a?(Integer) ? options[:user] : Etc.getpwnam(options[:user]).uid
-          Process::UID.change_privilege(uid)
-        end
+        switch_user(options[:user], options[:group]) if options[:user] || options[:group]
 
         @startup_command = block if block_given?
         options[:daemonize] ? daemonize : start
@@ -87,8 +78,9 @@ module Dante
         exit if fork
         Process.setsid
         exit if fork
+        # Handle INT and TERM before the pid file tells the caller we have started
+        trap_signals
         store_pid(Process.pid)
-        File.umask 0000
         redirect_output!
         start
       end
@@ -110,15 +102,7 @@ module Dante
          redirect_output! 
       end
 
-      trap("INT") {
-        interrupt
-        exit
-      }
-
-      trap("TERM"){
-        log "Trying to stop #{@name}..."
-        exit
-      }
+      trap_signals
 
       @startup_command.call(self.options) if @startup_command
     end
@@ -172,6 +156,8 @@ module Dante
     def daemon_running?
       return false unless File.exist?(options[:pid_path])
       Process.kill 0, File.read(options[:pid_path]).to_i
+      true
+    rescue Errno::EPERM # the process exists but belongs to another user
       true
     rescue Errno::ESRCH
       false
@@ -231,6 +217,53 @@ module Dante
       options
     end
 
+    # Switches the process to user (a name or uid) and group (a name or gid). When running
+    # as root the group defaults to the user's primary group, and the supplementary groups
+    # (which changing the uid and gid leaves as they were) are set too: to the user's own
+    # groups, or to just the process's group for a group alone or a uid with no passwd
+    # entry. Otherwise only what was given changes. Everything is looked up before
+    # anything is changed.
+    def switch_user(user, group)
+      root = Process.euid == 0
+      passwd = if user.is_a?(Integer)
+                 begin
+                   Etc.getpwuid(user)
+                 rescue ArgumentError # a uid with no passwd entry
+                   nil
+                 end
+               elsif user
+                 Etc.getpwnam(user)
+               end
+      uid = passwd ? passwd.uid : user
+      gid = if group
+              group.is_a?(Integer) ? group : Etc.getgrnam(group).gid
+            elsif passwd && root
+              passwd.gid
+            end
+
+      if root
+        if passwd
+          Process.initgroups(passwd.name, gid)
+        else
+          Process.groups = [gid || Process.egid]
+        end
+      end
+      Process::GID.change_privilege(gid) if gid
+      Process::UID.change_privilege(uid) if uid
+    end
+
+    def trap_signals
+      trap("INT") {
+        interrupt
+        exit
+      }
+
+      trap("TERM"){
+        log "Trying to stop #{@name}..."
+        exit
+      }
+    end
+
     def store_pid(pid)
       FileUtils.mkdir_p(File.dirname(options[:pid_path]))
       File.open(options[:pid_path], 'w'){|f| f.write("#{pid}\n")}
@@ -259,18 +292,25 @@ module Dante
         # Set permissions on the log file
         File.chmod(0644, log_path)
         # Reopen $stdout (NOT +STDOUT+) to start writing to the log file
-        $stdout.reopen(log_path, 'a')
+        reopen_stream($stdout, log_path, 'a')
         # Redirect $stderr to $stdout
         $stderr.reopen $stdout
         $stdout.sync = true
       else # redirect to /dev/null
         # We're not bothering to sync if we're dumping to /dev/null
         # because /dev/null doesn't care about buffered output
-        $stdin.reopen '/dev/null'
-        $stdout.reopen '/dev/null', 'a'
+        reopen_stream($stdin, '/dev/null', 'r')
+        reopen_stream($stdout, '/dev/null', 'a')
         $stderr.reopen $stdout
       end
       log_path = options[:log_path] ? options[:log_path] : '/dev/null'
+    end
+
+    # Reopens stream onto path, opened with mode. Reopening onto an open File rather
+    # than a path works whatever mode the stream itself was opened with (a socket, for
+    # one, when run under Spring or Zeus).
+    def reopen_stream(stream, path, mode)
+      File.open(path, mode) { |file| stream.reopen(file) }
     end
 
     # Runs until the block condition is met or the timeout_seconds is exceeded
