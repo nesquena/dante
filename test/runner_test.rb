@@ -415,6 +415,20 @@ describe "dante runner" do
       assert_equal "#{@foreign_pid}\n", File.read(@pid_path)
     end
 
+    it "stops waiting at once when it cannot signal it, even with :force" do
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      result, output = run_without_permission_to_signal do
+        Dante::Runner.new('test-process', :pid_path => @pid_path, :force => true).stop
+        nil
+      end
+      elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+      assert_equal [:returned, nil], result
+      assert_match(/Failed to kill daemonized process/, output)
+      refute_match(/Sent SIG/, output)
+      assert_operator elapsed, :<, Dante::Runner::MAX_START_TRIES / 2.0, "waited for a daemon it could not signal"
+      assert_equal "#{@foreign_pid}\n", File.read(@pid_path)
+    end
   end # another user's process
 
   describe "with an empty pid file, as left by a crash between creating and writing it" do

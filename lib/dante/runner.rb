@@ -110,17 +110,13 @@ module Dante
     # Stops a daemonized process
     def stop(kill_arg=nil)
       if self.daemon_running?
-        kill_pid(kill_arg || options[:kill])
-        
-        if until_true(MAX_START_TRIES) { self.daemon_stopped? }
+        if wait_for_stop(kill_pid(kill_arg || options[:kill]))
           FileUtils.rm options[:pid_path] # Only kill if we stopped the daemon
           log "Daemonized process killed after term."
         else
           log "Failed to kill daemonized process"
           if options[:force]
-            kill_pid(kill_arg || options[:kill], 'KILL')
-
-            if until_true(MAX_START_TRIES) { self.daemon_stopped? }
+            if wait_for_stop(kill_pid(kill_arg || options[:kill], 'KILL'))
               FileUtils.rm options[:pid_path] # Only kill if we stopped the daemon
               log "Daemonized process killed after kill."
             end
@@ -278,16 +274,25 @@ module Dante
       pid if pid > 0
     end
 
+    # Sends sig to the daemons, and returns whether it reached any of them.
     def kill_pid(k='*', sig='TERM')
-      Dir[options[:pid_path]].each do |f|
+      Dir[options[:pid_path]].count do |f|
         begin
-          next unless pid = read_pid(f)
+          next false unless pid = read_pid(f)
           Process.kill(sig, pid)
           log "Sent SIG#{sig} to PID: #{pid} at #{f}"
+          true
         rescue => e
           log "Failed to stop! #{k}: #{e}"
+          false
         end
-      end
+      end > 0
+    end
+
+    # Waits for the daemon to stop once a signal reached it. When none did (the daemon
+    # belongs to another user), it cannot stop, so this only checks once.
+    def wait_for_stop(signalled)
+      signalled ? until_true(MAX_START_TRIES) { self.daemon_stopped? } : self.daemon_stopped?
     end
 
     # Redirect output based on log settings (reopens stdout/stderr to specified logfile)

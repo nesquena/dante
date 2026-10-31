@@ -24,6 +24,8 @@ Changes since 0.2.0:
   instead of raising `can't change access mode`. Reported by @antonfefilov in #20. (#22, @nesquena)
 - Fixed: a pid file naming another user's process no longer crashes with `Errno::EPERM`: starting prints "Process
   is already started", and `-k` reports that it could not stop the process and keeps the pid file. (#22, @nesquena)
+- Fixed: `-k` with `--force` on another user's process gives up at once instead of waiting 10 seconds for a
+  process it cannot signal. (#XXXX, @nesquena)
 - Fixed: an empty pid file (left by a crash between creating and writing it), or one holding 0 or a negative
   number, counts as no daemon. Before, starting refused with "Process is already started", and `-k` sent SIGTERM
   to its own process group, killing itself and the processes started alongside it. (#XXXX, @nesquena)
