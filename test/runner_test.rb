@@ -576,6 +576,34 @@ describe "dante runner" do
     end
   end # dies at once
 
+  describe "with daemonize flag, when the daemon dies right after recording its pid" do
+    it "reports that it could not be started" do
+      pid_path = tmp_path('dante.pid')
+      # After the check made before starting, checks for the daemon only once its pid is
+      # recorded, so the check falls in the moment between the daemon starting up and dying.
+      checking_runner = Class.new(Dante::Runner) do
+        define_method(:daemon_running?) do
+          if @checked_before_starting
+            deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
+            sleep 0.01 until (File.exist?(pid_path) && File.read(pid_path).to_i > 0) ||
+                             Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+          end
+          @checked_before_starting = true
+          super()
+        end
+      end
+      result = nil
+      output = capture_stdout {
+        result = checking_runner.new('test-process', :daemonize => true, :pid_path => pid_path,
+                                     :log_path => tmp_path('dante.log')) { sleep 0.2; raise "boom" }.execute }
+
+      assert_equal false, result
+      assert_match(/Daemonized process couldn't be started/, output)
+      refute_match(/started successfully/, output)
+      assert_match(/Starting test-process/, File.read(tmp_path('dante.log'))) # it did start, then died
+    end
+  end # dies after recording its pid
+
   describe "with the -p option" do
     it "passes the port to the startup block as an Integer" do
       ARGV.replace(['-p', '1234'])

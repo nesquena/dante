@@ -17,6 +17,10 @@ This is a utility for setting up a binary executable for a service.
 module Dante
   class Runner
     MAX_START_TRIES = 5
+    # Seconds a new daemon must stay up before it counts as started.
+    # ceiling: a daemon that dies later than this is still reported as started; a
+    # readiness signal from the startup block would close that.
+    START_GRACE = 1
 
     attr_accessor :options, :name, :description, :verify_options_hook
 
@@ -73,20 +77,23 @@ module Dante
          options[:log_path] = "/var/log/#{@name}.log"
       end
 
-      # Start process
+      # Start process: a session leader forks the daemon, then exits with success only
+      # if the daemon is still running START_GRACE seconds later. As the daemon's parent
+      # it sees the daemon exit at once, where the pid file cannot tell.
       pid = fork do
-        exit if fork
         Process.setsid
-        exit if fork
-        # Handle INT and TERM before the pid file tells the caller we have started
-        trap_signals
-        store_pid(Process.pid)
-        redirect_output!
-        start
+        daemon = fork do
+          # Handle INT and TERM before the pid file tells the caller we have started
+          trap_signals
+          store_pid(Process.pid)
+          redirect_output!
+          start
+        end
+        exit !until_true(START_GRACE, 0.1) { !Process.waitpid(daemon, Process::WNOHANG).nil? }
       end
-      Process.waitpid pid
+      _, status = Process.waitpid2(pid)
       # Ensure process is running
-      if until_true(MAX_START_TRIES) { self.daemon_running? }
+      if status.success? && until_true(MAX_START_TRIES) { self.daemon_running? }
         log "Daemon has started successfully"
         true
       else # Failed to start

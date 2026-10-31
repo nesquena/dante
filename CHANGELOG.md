@@ -20,6 +20,10 @@ Changes since 0.2.0:
 - **Changed: the daemon keeps the caller's umask** instead of setting it to 0000, so new files are 644 and
   directories 755 under umask 022 (they were 666 and 777). If the daemon must create world-writable files, set
   `File.umask` in the startup block. The log file stays 0644. (#22, @nesquena)
+- **Changed: a daemon now counts as started only if it is still running 1 second after it was forked**, so
+  `-d` takes about a second longer. A daemon that exits at once (its startup block raised, or returned) is now
+  reported as "Daemonized process couldn't be started" and `daemonize` returns false; before, it could be
+  reported as started. (#XXXX, @nesquena)
 - Fixed: output redirection when the standard streams are sockets (Spring, Zeus): output now goes to the log
   instead of raising `can't change access mode`. Reported by @antonfefilov in #20. (#22, @nesquena)
 - Fixed: a pid file naming another user's process no longer crashes with `Errno::EPERM`: starting prints "Process
