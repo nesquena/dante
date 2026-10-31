@@ -21,9 +21,11 @@ Changes since 0.2.0:
   directories 755 under umask 022 (they were 666 and 777). If the daemon must create world-writable files, set
   `File.umask` in the startup block. The log file stays 0644. (#22, @nesquena)
 - **Changed: a daemon now counts as started only if it is still running 1 second after it was forked**, so
-  `-d` takes about a second longer. A daemon that exits at once (its startup block raised, or returned) is now
+  `-d` takes up to a second longer. A daemon that exits at once (its startup block raised, or returned) is now
   reported as "Daemonized process couldn't be started", `daemonize` returns false, and the pid file it left is
-  removed; before, it could be reported as started, and its stale pid stayed in the pid file. (#24, @nesquena)
+  removed; before, it could be reported as started, and its stale pid stayed in the pid file. The exit status of
+  your executable doesn't change (dante doesn't set it): to act on a failed start, check what `execute` returns.
+  (#24, @nesquena)
 - **Changed: the process between the caller and the daemon no longer runs the program's `at_exit` handlers**; it
   leaves with `exit!`, as Ruby's `Process.daemon` does. They used to run in the two intermediate processes right
   after the fork, so a cleanup handler (stripe-ruby-mock's `kill_server`, say) ran there too. Handlers still run in
@@ -32,8 +34,8 @@ Changes since 0.2.0:
   instead of raising `can't change access mode`. Reported by @antonfefilov in #20. (#22, @nesquena)
 - Fixed: a pid file naming another user's process no longer crashes with `Errno::EPERM`: starting prints "Process
   is already started", and `-k` reports that it could not stop the process and keeps the pid file. (#22, @nesquena)
-- Fixed: `-k` with `--force` on another user's process gives up at once instead of waiting 10 seconds for a
-  process it cannot signal. (#24, @nesquena)
+- Fixed: `-k` on another user's process gives up at once (in about 0.2 seconds) instead of waiting 5 seconds, or
+  10 with `--force`, for a process it cannot signal. (#24, @nesquena)
 - Fixed: an empty pid file (left by a crash between creating and writing it), or one holding 0 or a negative
   number, counts as no daemon. Before, starting refused with "Process is already started", and `-k` sent SIGTERM
   to its own process group, killing itself and the processes started alongside it. A number too large for a pid
