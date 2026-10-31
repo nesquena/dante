@@ -691,7 +691,9 @@ describe "dante runner" do
       Process.kill('TERM', pid)
       wait_for_exit(pid)
 
-      assert_equal "Daemonized process couldn't be started\nfalse\n", run_program(script, tmp_path('crash.pid'), @logfile, 'crash')
+      crash_pid_path = tmp_path('crash.pid')
+      assert_equal "Daemonized process couldn't be started\nfalse\n", run_program(script, crash_pid_path, @logfile, 'crash')
+      refute File.exist?(crash_pid_path), "the dead daemon's pid file was left behind"
     end
   end # program of its own
 
