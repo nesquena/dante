@@ -416,6 +416,117 @@ describe "dante runner" do
     end
   end # another user's process
 
+  describe "with daemonize flag, controlling a running daemon" do
+    before do
+      @pid_path = tmp_path('dante.pid')
+      @logfile = tmp_path('dante.log')
+      @first_started = tmp_path('first-started')
+      @run_options = { :daemonize => true, :pid_path => @pid_path, :log_path => @logfile }
+      first_started = @first_started
+      @start_result = nil
+      @stdout = capture_stdout {
+        @start_result = Dante::Runner.new('test-process', @run_options) { File.write(first_started, ""); sleep 100 }.execute }
+      wait_for_output(@first_started)
+      @pid = daemon_pid(@pid_path)
+    end
+
+    it "runs the daemon in a session of its own, which it does not lead" do
+      assert_equal true, @start_result
+      refute_equal Process.getsid, Process.getsid(@pid)
+      refute_equal @pid, Process.getsid(@pid)
+    end
+
+    it "does not start a second daemon on the same pid file" do
+      second_started = tmp_path('second-started')
+      result = :not_returned
+      output = capture_stdout {
+        result = Dante::Runner.new('test-process', @run_options) { File.write(second_started, "") }.execute }
+
+      assert_equal "Process is already started\n", output
+      assert_nil result
+      assert_equal "#{@pid}\n", File.read(@pid_path)
+      assert process_alive?(@pid)
+    end
+
+    it "stops the daemon and starts a new one with :restart" do
+      second_started = tmp_path('second-started')
+      result = nil
+      output = capture_stdout {
+        result = Dante::Runner.new('test-process', @run_options.merge(:restart => true)) {
+          File.write(second_started, ""); sleep 100 }.execute }
+
+      assert_equal true, result
+      assert_match(/Daemonized process killed after term.*Daemon has started successfully/m, output)
+      refute process_alive?(@pid), "the first daemon is still running"
+      wait_for_output(second_started)
+      new_pid = daemon_pid(@pid_path)
+      refute_equal @pid, new_pid
+      assert process_alive?(new_pid)
+    end
+
+    it "stops the daemon with -k and removes its pid file" do
+      ARGV.replace(['-k', '-P', @pid_path])
+      output = capture_stdout { Dante::Runner.new('test-process').execute }
+
+      assert_match(/Sent SIGTERM to PID: #{@pid}/, output)
+      assert_match(/Daemonized process killed after term/, output)
+      refute process_alive?(@pid), "daemon still running after -k"
+      refute File.exist?(@pid_path), "pid file left behind after -k"
+    end
+  end # controlling a running daemon
+
+  describe "with daemonize flag and no log path" do
+    before do
+      # Records the log path the daemon would redirect its output to, then sends the
+      # output to a file of this test's instead of writing to /var/log.
+      recorded = @recorded = tmp_path('recorded-log-path')
+      logfile = tmp_path('dante.log')
+      recording_runner = Class.new(Dante::Runner) do
+        define_method(:redirect_output!) do
+          File.write("#{recorded}.tmp", options[:log_path].inspect)
+          File.rename("#{recorded}.tmp", recorded)
+          options[:log_path] = logfile
+          super()
+        end
+      end
+      @pid_path = tmp_path('dante.pid')
+      @stdout = capture_stdout {
+        recording_runner.new('test-process', :daemonize => true, :pid_path => @pid_path) { sleep 100 }.execute }
+      daemon_pid(@pid_path)
+      wait_for_output(@recorded)
+    end
+
+    it "logs to /var/log/<name>.log" do
+      assert_equal '"/var/log/test-process.log"', File.read(@recorded)
+    end
+  end # default log path
+
+  describe "with daemonize flag, when the daemon dies before recording its pid" do
+    it "reports that it could not be started" do
+      # The daemon fails to create the pid file's directory, which is a device.
+      pid_path = File.join(File::NULL, 'dante.pid')
+      result = nil
+      output = capture_stdout {
+        result = Dante::Runner.new('test-process', :daemonize => true, :pid_path => pid_path,
+                                   :log_path => tmp_path('dante.log')) { raise "should not get here" }.execute }
+
+      assert_equal false, result
+      assert_match(/Daemonized process couldn't be started/, output)
+      refute_match(/started successfully/, output)
+    end
+  end # dies at once
+
+  describe "with the -p option" do
+    it "passes the port to the startup block as an Integer" do
+      ARGV.replace(['-p', '1234'])
+      port = nil
+      capture_stdout { Dante::Runner.new('test-process').execute { |opts| port = opts[:port] } }
+
+      assert_equal 1234, port
+      assert_kind_of Integer, port
+    end
+  end # -p
+
   describe "with parsing options" do
     before do
       ARGV.replace(['-t test_text'])

@@ -98,9 +98,9 @@ module DanteTestHarness
   # Stops every daemon whose pid file is in this test's directory, or whose pid the test
   # read with daemon_pid, even when the test failed: SIGTERM first, then SIGKILL for
   # daemons that trap SIGTERM.
-  # ceiling: a pid file left by a daemon that already exited is trusted while its pid is
-  # alive, so a pid reused within the test's lifetime would be signalled; checking the
-  # process start time in /proc would rule that out.
+  # ceiling: a pid file or recorded pid of a daemon that already exited is trusted while
+  # its pid is alive, so a pid reused within the test's lifetime would be signalled;
+  # checking the process start time in /proc would rule that out.
   def stop_daemons
     pid_files = Dir[File.join(@tmpdir, '**', '*.pid')]
     pids = pid_files.map { |f| [File.read(f).to_i, f] } + Array(@daemon_pids).map { |p| [p, 'daemon_pid'] }
