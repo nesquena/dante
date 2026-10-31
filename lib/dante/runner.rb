@@ -259,18 +259,25 @@ module Dante
         # Set permissions on the log file
         File.chmod(0644, log_path)
         # Reopen $stdout (NOT +STDOUT+) to start writing to the log file
-        $stdout.reopen(log_path, 'a')
+        reopen_stream($stdout, log_path, 'a')
         # Redirect $stderr to $stdout
         $stderr.reopen $stdout
         $stdout.sync = true
       else # redirect to /dev/null
         # We're not bothering to sync if we're dumping to /dev/null
         # because /dev/null doesn't care about buffered output
-        $stdin.reopen '/dev/null'
-        $stdout.reopen '/dev/null', 'a'
+        reopen_stream($stdin, '/dev/null', 'r')
+        reopen_stream($stdout, '/dev/null', 'a')
         $stderr.reopen $stdout
       end
       log_path = options[:log_path] ? options[:log_path] : '/dev/null'
+    end
+
+    # Reopens stream onto path, opened with mode. Reopening onto an open File rather
+    # than a path works whatever mode the stream itself was opened with (a socket, for
+    # one, when run under Spring or Zeus).
+    def reopen_stream(stream, path, mode)
+      File.open(path, mode) { |file| stream.reopen(file) }
     end
 
     # Runs until the block condition is met or the timeout_seconds is exceeded

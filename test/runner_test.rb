@@ -1,4 +1,5 @@
 require File.expand_path('../test_helper', __FILE__)
+require 'socket'
 
 describe "dante runner" do
 
@@ -198,6 +199,70 @@ describe "dante runner" do
       assert_match(/Closing!!/, @output)
     end
   end # execute with block
+
+  describe "with the standard streams connected to a socket" do
+    # Runs the block in a forked child whose stdin, stdout and stderr are one end of a
+    # socket pair, as under Spring or Zeus. Returns the child's exit status and the
+    # error it raised, if any. The error goes through a file rather than a pipe, which
+    # a daemon started by the block would hold open.
+    def run_with_socket_streams
+      error_path = tmp_path('child-error')
+      pid = fork do
+        begin
+          socket, _peer = UNIXSocket.pair
+          [STDIN, STDOUT, STDERR].each { |io| io.reopen(socket) }
+          $stdin, $stdout, $stderr = STDIN, STDOUT, STDERR
+          yield
+        rescue Exception => e
+          File.write(error_path, "#{e.class}: #{e.message}")
+          exit!(1)
+        end
+        exit!(0)
+      end
+      Process.wait(pid)
+      [$?.exitstatus, File.exist?(error_path) ? File.read(error_path) : ""]
+    end
+
+    def null_device?(io)
+      io.stat.chardev? && io.stat.rdev == File.stat(File::NULL).rdev
+    end
+
+    it "appends to the log file when run in the foreground" do
+      @logfile = tmp_path('dante-socket.log')
+      File.write(@logfile, "earlier line\n")
+      status, error = run_with_socket_streams do
+        Dante::Runner.new('test-process', :log_path => @logfile) { puts "Started" }.execute
+      end
+
+      assert_equal [0, ""], [status, error]
+      assert_equal "earlier line\nStarted\n", File.read(@logfile)
+      assert_equal 0644, File.stat(@logfile).mode & 0777
+    end
+
+    it "logs to the log file when daemonized" do
+      @logfile = tmp_path('dante-socket.log')
+      @pid_path = tmp_path('dante.pid')
+      @process = TestingProcess.new('c', @tmpdir)
+      status, error = run_with_socket_streams do
+        Dante::Runner.new('test-process', :daemonize => true, :pid_path => @pid_path, :log_path => @logfile) {
+          @process.run_c!(8082) }.execute
+      end
+
+      assert_equal [0, ""], [status, error]
+      wait_for_output(@logfile, /Started on 8082!!/)
+      assert_equal 0644, File.stat(@logfile).mode & 0777
+    end
+
+    it "redirects all three streams to /dev/null without a log file" do
+      status, error = run_with_socket_streams do
+        Dante::Runner.new('test-process', :log_path => false).send(:redirect_output!)
+        streams = [STDIN, STDOUT, STDERR]
+        raise "not redirected to /dev/null: #{streams.reject { |io| null_device?(io) }.map(&:fileno)}" unless streams.all? { |io| null_device?(io) }
+      end
+
+      assert_equal [0, ""], [status, error]
+    end
+  end # socket streams
 
   describe "with parsing options" do
     before do
