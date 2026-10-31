@@ -7,11 +7,10 @@ Gem::Specification.new do |s|
   s.version     = Dante::VERSION
   s.authors     = ["Nathan Esquenazi"]
   s.email       = ["nesquena@gmail.com"]
-  s.homepage    = "https://github.com/bazaarlabs/dante"
+  s.homepage    = "https://github.com/nesquena/dante"
   s.summary     = %q{Turn any process into a demon}
   s.description = %q{Turn any process into a demon.}
-
-  s.rubyforge_project = "dante"
+  s.license     = "MIT"
 
   s.files         = `git ls-files`.split("\n")
   s.test_files    = `git ls-files -- {test,spec,features}/*`.split("\n")
