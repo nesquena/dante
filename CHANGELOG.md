@@ -5,18 +5,18 @@
 - Fixed: the daemon writes its pid file to a new file in the same directory and renames it into place, so a
   symlink or another file already at the pid file's path is replaced instead of written through, and a reader
   never sees a half-written pid file. The pid file now always belongs to the daemon's user, with mode 0666 less
-  the umask; an existing pid file used to keep its owner and mode. (#XXXX, @nesquena)
+  the umask; an existing pid file used to keep its owner and mode. (#31, @nesquena)
 - Fixed: stopping (`-k`, `stop`) and `daemon_running?` ignore a pid file owned by neither root, nor the user
   stopping, nor the user the process it names runs as, since another user could have written it to have that
   process stopped. A stop then says "pid file X is owned by uid A but process P belongs to uid B; not stopping
   it", keeps the pid file and returns false, and a start goes ahead and replaces the pid file. This needs `/proc`
   (Linux); elsewhere nothing changes. **What to do:** nothing for pid files the daemon writes itself, including a
   daemon started with `sudo ... -u nobody` and stopped with `sudo ... -k`; a pid file written by another tool
-  must belong to root or to the daemon's user. (#XXXX, @nesquena)
+  must belong to root or to the daemon's user. (#31, @nesquena)
 - Fixed: the log file is no longer given mode 0644 at every start. An existing log file keeps its mode (through a
   symlinked log path, so does the file it points to), and a new one is created with mode 0644 less the umask:
   0644 with the usual umask of 022, 0640 with 027. **What to do:** for a log file other users can read under a
-  stricter umask, create it with the mode you want before starting, or set the umask. (#XXXX, @nesquena)
+  stricter umask, create it with the mode you want before starting, or set the umask. (#31, @nesquena)
 - Fixed: a daemon's standard input is now `/dev/null`. It stayed on the terminal or pipe it was started from, so a
   daemon reading stdin read the user's keystrokes, and a terminal or pty that started it never saw end-of-file
   while the daemon ran. (#30, @nesquena)
