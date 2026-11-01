@@ -13,6 +13,9 @@
 - Fixed: stopping checks whether the daemon has exited every 0.1 seconds instead of every second, so `-k` returns
   as soon as the daemon has stopped rather than after a second at least. It still waits up to 5 seconds (and 5
   more with `--force`). (#XXXX, @nesquena)
+- Fixed: `:kill => false` and `:restart => false` passed to `execute` are now off. Before, giving either key at
+  all stopped the daemon (`:kill`) or stopped and restarted it (`:restart`), whatever its value. `:kill => nil`, as
+  `-k` sets it, still stops. (#XXXX, @nesquena)
 
 ## 0.3.0 (2026-10-31)
 

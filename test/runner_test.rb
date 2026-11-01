@@ -547,6 +547,17 @@ describe "dante runner" do
       assert process_alive?(new_pid)
     end
 
+    it "neither stops nor restarts the daemon with :kill or :restart given as false" do
+      [{ :kill => false }, { :restart => false }].each do |off|
+        output = capture_stdout {
+          Dante::Runner.new('test-process', @run_options.merge(off)) { sleep 100 }.execute }
+
+        assert_equal ["Process is already started\n"], output.lines.grep_v(/: warning: /), off.inspect
+        assert_equal "#{@pid}\n", File.read(@pid_path), off.inspect
+        assert process_alive?(@pid), off.inspect
+      end
+    end
+
     it "stops the daemon with -k and removes its pid file" do
       ARGV.replace(['-k', '-P', @pid_path])
       output = capture_stdout { Dante::Runner.new('test-process').execute }

@@ -56,10 +56,11 @@ module Dante
 
       @verify_options_hook.call(self.options) if @verify_options_hook
 
-      if options.include?(:kill)
+      # A key given as false is off; -k with no argument sets :kill to nil, which is on.
+      if options.fetch(:kill, false) != false
         self.stop
       else # create process
-        self.stop if options.include?(:restart)
+        self.stop if options.fetch(:restart, false) != false
 
         # If a username, uid, groupname, or gid is passed,
         # drop privileges accordingly.
