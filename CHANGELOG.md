@@ -20,6 +20,10 @@
   out does; before, the log path was ignored. (#XXXX, @nesquena)
 - Fixed: `Runner#restart` starts the service as a daemon when `:daemonize` is set, as `execute` does; it used to
   run it in the foreground, in the calling process. (#XXXX, @nesquena)
+- Documentation: the README's `-u nobody -G nogroup` example now gives pid and log paths that user can write (with
+  the defaults, the daemon failed to start), says what `-k` and `-f`/`--force` do, lists all the options, and adds
+  the requirements (MRI on Unix, for `fork`), running under systemd, and log rotation with `copytruncate` (SIGHUP
+  stops the daemon). (#XXXX, @nesquena)
 
 ## 0.3.0 (2026-10-31)
 

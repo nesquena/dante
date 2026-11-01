@@ -10,6 +10,11 @@ can be started via command line or start/stop a daemon, and will store a pid fil
 If you need to create a ruby executable and you want standard daemon start/stop with pid files
 and no hassle, this gem will be a great way to get started.
 
+## Requirements
+
+Dante daemonizes with `fork`, so it needs MRI (CRuby) 2.7 or newer on Unix: Linux, macOS or a BSD. It does not
+run on Windows or JRuby, which have no `fork`.
+
 ## Installation
 
 Add to your Gemfile:
@@ -81,24 +86,53 @@ All stdout and stderr will be redirected to the specified logfile. If no logfile
 stdout and stderr will be directed to /var/log/<myapp name>.log.
 
 ```
-./bin/myapp -d -u nobody -G nogroup
+sudo install -d -o nobody -g nogroup /var/run/myapp /var/log/myapp
+sudo ./bin/myapp -d -u nobody -G nogroup -P /var/run/myapp/myapp.pid -l /var/log/myapp/myapp.log
 ```
 
 will switch to the user nobody before starting, with the group given by `-G`. When started as root, the group
 defaults to the user's primary group, and the process takes on the user's supplementary groups (plus the `-G`
-group, if given).
+group, if given). The switch happens before the pid file and the log file are written, so both must be in
+directories that user can write: the defaults, `/var/run/myapp.pid` and `/var/log/myapp.log`, are not, and the
+daemon would fail to start. Keep the pid file and the log in directories that only the daemon's user (or root) can
+write, never in one that other users can write, such as `/tmp`: another user could put a file or a symlink of
+their own at that path.
 
 ```
 ./bin/myapp -k -P /var/run/myapp.pid
 ```
 
-will stop all daemonized processes for the specified pid file.
+will stop the daemon whose pid is in the specified pid file: it sends SIGTERM, waits up to 5 seconds for the
+daemon to exit, and then removes the pid file. If the daemon is still running, it says "Failed to kill daemonized
+process" and keeps the pid file.
+
+```
+./bin/myapp -k -f -P /var/run/myapp.pid
+```
+
+will do the same, and if the daemon survives SIGTERM, send it SIGKILL (`-f`/`--force`, or `:force => true`) and
+wait up to 5 more seconds.
 
 ```
 ./bin/myapp --help
 ```
 
-Will return a useful help banner message explaining the simple usage.
+Will return a useful help banner message explaining the simple usage. These are all the built-in options:
+
+```
+    -p, --port PORT           Specify port
+                              (default: )
+    -P, --pid FILE            save PID in FILE when using -d option.
+                              (default: /var/run/myapp.pid)
+    -d, --daemon              Daemonize mode
+    -l, --log FILE            Logfile for output
+                              (default: /var/log/myapp.log)
+    -k, --kill [PORT]         Stop the daemon in the pid file (PORT is ignored)
+    -u, --user USER           User to run as
+    -G, --group GROUP         Group to run as
+    -f, --force               Force kill if SIGTERM fails
+    -?, --help                Display this usage information.
+```
 
 ### Advanced
 
@@ -157,6 +191,67 @@ Dante::Runner.new('gitdocs').execute(:daemonize => true, :restart => true, :pid_
 ```
 
 so you can use dante as part of a more complex CLI executable.
+
+## systemd
+
+Under systemd, let systemd run the process in the foreground (`Type=simple`), as the user it names, with the
+output going to the journal:
+
+```ini
+# /etc/systemd/system/myapp.service
+[Unit]
+Description=myapp
+After=network.target
+
+[Service]
+Type=simple
+User=myapp
+Group=myapp
+ExecStart=/path/to/myapp/bin/myapp -p 8080
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+systemd stops it with SIGTERM, which dante handles. To have dante daemonize instead, use `Type=forking` with the
+pid file and the log in directories systemd creates for that user:
+
+```ini
+[Service]
+Type=forking
+User=myapp
+Group=myapp
+RuntimeDirectory=myapp
+LogsDirectory=myapp
+PIDFile=/run/myapp/myapp.pid
+ExecStart=/path/to/myapp/bin/myapp -d -p 8080 -P /run/myapp/myapp.pid -l /var/log/myapp/myapp.log
+Restart=on-failure
+```
+
+Use `User=` and `Group=` rather than `-u` and `-G` under systemd, so that the process starts as that user and the
+directories systemd creates belong to it.
+
+## Log rotation
+
+The daemon opens its log file once, for appending, and has no SIGHUP handler: SIGHUP stops it. So rotate the log
+with logrotate's `copytruncate`, rather than a `postrotate` script that sends SIGHUP:
+
+```
+# /etc/logrotate.d/myapp
+/var/log/myapp/myapp.log {
+  weekly
+  rotate 4
+  compress
+  delaycompress
+  missingok
+  notifempty
+  copytruncate
+}
+```
+
+`copytruncate` copies the log and empties it in place, and the daemon carries on writing at the start of the
+emptied file. Lines written between the copy and the truncation are lost.
 
 ## God
 
