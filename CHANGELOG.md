@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Fixed: two daemons started at the same moment on one pid file no longer both run, with both starts reporting
+  success. A daemon now holds a lock (`flock`) on a lock file next to the pid file, `<pid file>.lock`, for as long
+  as it runs, taken before it writes its pid; a daemon that finds the lock held says "<name> is already running:
+  another daemon holds the lock on <lock file>" and exits, and its start reports "Daemonized process couldn't be
+  started". The lock file is created by the daemon's user with mode 0600 and stays after the daemon stops.
+  **What to do:** nothing in most setups, since the lock file goes in the pid file's directory, which the daemon's
+  user can already write. If you change the `-u` user of a daemon whose pid file path was used before, remove the
+  old lock file, which the new user cannot open. (#32, @nesquena)
 - Fixed: a daemon's standard input is now `/dev/null`. It stayed on the terminal or pipe it was started from, so a
   daemon reading stdin read the user's keystrokes, and a terminal or pty that started it never saw end-of-file
   while the daemon ran. (#30, @nesquena)

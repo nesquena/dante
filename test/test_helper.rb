@@ -78,6 +78,52 @@ module DanteTestHarness
     assert wait_until { File.exist?(path) && File.read(path) =~ pattern }, "#{path} never matched #{pattern.inspect}"
   end
 
+  # Starts two daemons with options at once, each from a forked child of its own, both
+  # past the check for a running daemon before either starts one. A daemon that runs
+  # its startup block writes its pid to ran-<pid>.pid in dir (which the daemons' user must
+  # be able to write), where stop_daemons finds it. Returns each start's result and output.
+  def start_two_at_once(options, dir = @tmpdir)
+    barrier = File.join(dir, 'barrier')
+    racing_runner = Class.new(Dante::Runner) do
+      define_method(:daemon_running?) do
+        running = super()
+        unless @raced # the check before starting: wait until the other start has made it too
+          @raced = true
+          File.write("#{barrier}.#{Process.pid}", "")
+          deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
+          sleep 0.01 until Dir["#{barrier}.*"].size >= 2 || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+        end
+        running
+      end
+    end
+    starts = 2.times.map do |i|
+      out_path = File.join(dir, "start-#{i}.out")
+      pid = fork do
+        $stdout = File.open(out_path, 'w')
+        $stdout.sync = true
+        result = begin
+          racing_runner.new('test-process', options) {
+            File.write(File.join(dir, "ran-#{Process.pid}.pid"), "#{Process.pid}\n")
+            sleep 100 }.execute
+        rescue Exception => e
+          "#{e.class}: #{e.message}"
+        end
+        File.write("#{out_path}.result", result.inspect)
+        exit!(0)
+      end
+      [pid, out_path]
+    end
+    starts.map do |pid, out_path|
+      Process.wait(pid)
+      [File.read("#{out_path}.result"), File.read(out_path)]
+    end
+  end
+
+  # The pids of the daemons start_two_at_once started that ran their startup block.
+  def daemons_that_ran(dir = @tmpdir)
+    Dir[File.join(dir, 'ran-*.pid')].map { |f| File.read(f).to_i }
+  end
+
   # Waits for a daemon to exit (it is not our child: init reaps it).
   def wait_for_exit(pid, timeout = 10)
     assert wait_until(timeout) { !process_alive?(pid) }, "process #{pid} still running after #{timeout}s"
