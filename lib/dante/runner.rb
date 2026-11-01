@@ -352,10 +352,12 @@ module Dante
       false
     end
 
-    # Waits for pid, the daemon, to stop once a signal reached it. When none did (the
-    # daemon belongs to another user), it cannot stop, so this only checks once.
+    # Waits for pid, the daemon, to stop once a signal reached it, checking every 0.1
+    # seconds (a Rational step, so the steps add up to exactly MAX_START_TRIES seconds).
+    # When no signal reached it (the daemon belongs to another user), it cannot stop, so
+    # this only checks once.
     def wait_for_stop(pid, signalled)
-      signalled ? until_true(MAX_START_TRIES) { !process_running?(pid) } : !process_running?(pid)
+      signalled ? until_true(MAX_START_TRIES, Rational(1, 10)) { !process_running?(pid) } : !process_running?(pid)
     end
 
     # Redirect output based on log settings (reopens stdout/stderr to specified logfile)

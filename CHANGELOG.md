@@ -10,6 +10,9 @@
   records its pid while an old one stops keeps its pid file, and `--force` no longer sends it SIGKILL. A pid file
   path containing `[`, `*` or `?` can now be stopped. The `-k` help text now says what it does: it stops the daemon
   in the pid file, and ignores its optional argument. (#XXXX, @nesquena)
+- Fixed: stopping checks whether the daemon has exited every 0.1 seconds instead of every second, so `-k` returns
+  as soon as the daemon has stopped rather than after a second at least. It still waits up to 5 seconds (and 5
+  more with `--force`). (#XXXX, @nesquena)
 
 ## 0.3.0 (2026-10-31)
 

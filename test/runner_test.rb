@@ -619,6 +619,27 @@ describe "dante runner" do
       assert_equal "#{replacement}\n", File.read(@pid_path)
     end
 
+    it "returns soon after the daemon stops, well within the second it used to wait first" do
+      # A process of this test's that takes 0.2 seconds to stop on SIGTERM, reaped as soon
+      # as it exits (a daemon is reaped by init), stands in for the daemon.
+      script = "trap('TERM') { sleep 0.2; exit }; File.write(ARGV[0], ''); sleep 100"
+      pid = spawn(RbConfig.ruby, '-e', script, @ready)
+      reaper = Process.detach(pid)
+      wait_for_output(@ready)
+      File.write(@pid_path, "#{pid}\n")
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      output = capture_stdout { Dante::Runner.new('test-process', :pid_path => @pid_path).stop }
+      elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+      assert_match(/Daemonized process killed after term/, output)
+      assert_operator elapsed, :<, 0.8
+    ensure
+      if reaper && reaper.alive?
+        Process.kill('KILL', pid)
+        reaper.join
+      end
+    end
+
     it "stops a daemon whose pid file path has glob characters in it" do
       pid_path = tmp_path('run[1]/dante.pid')
       pid = start_daemon(pid_path)
