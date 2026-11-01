@@ -88,6 +88,7 @@ module Dante
           daemon = fork do
             # Handle INT and TERM before the pid file tells the caller we have started
             trap_signals
+            exit!(false) unless lock_pid_file # another daemon runs on this pid file
             store_pid(Process.pid)
             redirect_output!
             reopen_stream(IO.for_fd(0, autoclose: false), File::NULL, 'r') # fd 0, whatever STDIN or $stdin is
@@ -319,6 +320,24 @@ module Dante
       rescue Errno::ESRCH
         false
       end
+    end
+
+    # Takes the lock that a daemon holds for as long as it runs, on a lock file next to the
+    # pid file (pid_path.lock), and returns whether it got it: false when another daemon
+    # holds it, so that of two daemons started at once on one pid file, one runs. The lock
+    # (flock) goes when the daemon exits, however it exits. The lock file stays: removing it
+    # would let a daemon that opened it before then lock it while another locks a new one.
+    # It is readable by its owner only, since any user who can open it could hold the lock.
+    # ceiling: forked children of the daemon share the lock, and keep it if they outlive it;
+    # a startup block that execs drops it (Ruby opens files close-on-exec).
+    def lock_pid_file
+      lock_path = "#{options[:pid_path]}.lock"
+      FileUtils.mkdir_p(File.dirname(lock_path))
+      @pid_lock = File.open(lock_path, File::RDONLY | File::CREAT | File::NOFOLLOW, 0600)
+      return true if @pid_lock.flock(File::LOCK_EX | File::LOCK_NB)
+      log "#{@name} is already running: another daemon holds the lock on #{lock_path}"
+      $stdout.flush # exit! does not
+      false
     end
 
     # Removes the pid file if it still holds pid (another start may have replaced it).

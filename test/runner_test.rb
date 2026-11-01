@@ -635,6 +635,36 @@ describe "dante runner" do
     end
   end # controlling a running daemon
 
+  describe "with daemonize flag, started twice at once on one pid file" do
+    it "runs one daemon, and the other start fails" do
+      pid_path = tmp_path('dante.pid')
+      starts = start_two_at_once(:daemonize => true, :pid_path => pid_path, :log_path => tmp_path('dante.log'))
+      ran = wait_until { daemons_that_ran.first && daemons_that_ran }
+
+      assert_equal 1, ran.size, "daemons running: #{ran.inspect}"
+      assert_equal %w(false true), starts.map(&:first).sort, starts.inspect
+      failed_output = starts.find { |result, _| result == "false" }.last
+      assert_match(/test-process is already running: another daemon holds the lock on #{Regexp.escape(pid_path)}\.lock/, failed_output)
+      assert_match(/Daemonized process couldn't be started/, failed_output)
+      assert_equal "#{ran.first}\n", File.read(pid_path)
+      assert process_alive?(ran.first)
+    end
+
+    it "starts a daemon again once the one that held the lock has stopped" do
+      pid_path = tmp_path('dante.pid')
+      run_options = { :daemonize => true, :pid_path => pid_path, :log_path => tmp_path('dante.log') }
+      2.times do
+        result = nil
+        capture_stdout { result = Dante::Runner.new('test-process', run_options) { sleep 100 }.execute }
+        assert_equal true, result
+        pid = daemon_pid(pid_path)
+        capture_stdout { Dante::Runner.new('test-process', :pid_path => pid_path).stop }
+        wait_for_exit(pid)
+      end
+      assert File.exist?("#{pid_path}.lock"), "the lock file was removed"
+    end
+  end # started twice at once
+
   describe "with daemonize flag, stopping a daemon while its pid file changes" do
     before do
       @pid_path = tmp_path('dante.pid')

@@ -82,6 +82,9 @@ will start the app undaemonized in the terminal and redirect all stdout and stde
 
 will daemonize and start the process, storing the pid in the specified pid file. It reports the daemon as
 started once the daemon has kept running for a second, and as not started if it exits before then.
+For as long as it runs, the daemon holds a lock on a file next to the pid file (here `/var/run/myapp.pid.lock`),
+so a second daemon started on the same pid file, even at the same moment, exits at once and its start reports
+that it couldn't be started. The lock file stays when the daemon stops.
 All stdout and stderr will be redirected to the specified logfile. If no logfile is specified in daemon mode then all 
 stdout and stderr will be directed to /var/log/<myapp name>.log.
 

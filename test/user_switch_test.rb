@@ -92,6 +92,19 @@ describe "dante runner switching user and group" do
     assert_empty creds[:groups] & [0, 4, 27]
   end
 
+  it "runs one daemon of two started at once with -u, and the other start fails" do
+    run_in_child do
+      start_two_at_once({ :daemonize => true, :pid_path => @pid_path, :log_path => @log_path, :user => 'nobody' }, @dir)
+    end
+    starts = Dir[File.join(@dir, 'start-*.out.result')].map { |f| File.read(f) }
+    ran = wait_until { daemons_that_ran(@dir).first && daemons_that_ran(@dir) }
+
+    assert_equal 1, ran.size, "daemons running: #{ran.inspect}"
+    assert_equal %w(false true), starts.sort
+    assert_equal @nobody.uid, File.stat("#{@pid_path}.lock").uid
+    assert_equal "#{ran.first}\n", File.read(@pid_path)
+  end
+
   it "gives a daemon started with -u and -G that group and the user's groups" do
     group = begin
       Etc.getgrgid(1)
