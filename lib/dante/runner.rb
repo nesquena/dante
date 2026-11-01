@@ -67,7 +67,7 @@ module Dante
         switch_user(options[:user], options[:group]) if options[:user] || options[:group]
 
         @startup_command = block if block_given?
-        options[:daemonize] ? daemonize : start
+        start_service
       end
     end
 
@@ -165,7 +165,7 @@ module Dante
 
     def restart
       self.stop
-      self.start
+      start_service
     end
 
     def interrupt
@@ -190,6 +190,11 @@ module Dante
     end
 
     protected
+
+    # Starts the service: as a daemon with :daemonize, else in the foreground.
+    def start_service
+      options[:daemonize] ? daemonize : start
+    end
 
     def parse_options
       headline = [@name, @description].compact.join(" - ")

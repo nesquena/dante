@@ -561,6 +561,24 @@ describe "dante runner" do
       assert process_alive?(new_pid)
     end
 
+    it "restarts the daemon as a daemon with #restart" do
+      ran_in = tmp_path('ran-in')
+      test_pid = Process.pid
+      runner = Dante::Runner.new('test-process', @run_options) {
+        File.write("#{ran_in}.tmp", Process.pid.to_s)
+        File.rename("#{ran_in}.tmp", ran_in)
+        sleep 100 unless Process.pid == test_pid } # returns if it runs in this process
+      result = nil
+      output = capture_stdout { result = runner.restart }
+
+      wait_for_output(ran_in)
+      refute_equal test_pid.to_s, File.read(ran_in), "the service ran in the caller"
+      assert_equal true, result
+      assert_match(/Daemonized process killed after term.*Daemon has started successfully/m, output)
+      refute process_alive?(@pid), "the first daemon is still running"
+      assert_equal daemon_pid(@pid_path).to_s, File.read(ran_in)
+    end
+
     it "neither stops nor restarts the daemon with :kill or :restart given as false" do
       [{ :kill => false }, { :restart => false }].each do |off|
         output = capture_stdout {

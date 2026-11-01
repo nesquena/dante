@@ -18,6 +18,8 @@
   `-k` sets it, still stops. (#XXXX, @nesquena)
 - Fixed: `:daemonize => false` with a `:log_path` now writes the output to the log file, as leaving `:daemonize`
   out does; before, the log path was ignored. (#XXXX, @nesquena)
+- Fixed: `Runner#restart` starts the service as a daemon when `:daemonize` is set, as `execute` does; it used to
+  run it in the foreground, in the calling process. (#XXXX, @nesquena)
 
 ## 0.3.0 (2026-10-31)
 
