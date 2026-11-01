@@ -1,3 +1,4 @@
+require 'stringio'
 require File.expand_path('../test_helper', __FILE__)
 require 'socket'
 
@@ -37,6 +38,20 @@ describe "dante runner" do
       assert_match(/Started/, @output)
     end
   end # no daemonize
+
+  describe "with daemonize set to false and a log file" do
+    it "writes its output to the log file" do
+      logfile = tmp_path('dante-foreground.log')
+      capture_stdout {
+        pid = fork do
+          Dante::Runner.new('test-process', :daemonize => false, :log_path => logfile) { puts "Started" }.execute
+          exit!(0)
+        end
+        Process.wait(pid) }
+
+      assert_equal "Started\n", (File.read(logfile) if File.exist?(logfile))
+    end
+  end # daemonize false
 
   describe "with daemonize flag" do
     before do
@@ -313,6 +328,53 @@ describe "dante runner" do
       assert_equal 0644, File.stat(@logfile).mode & 0777
     end
 
+    it "gives the daemon /dev/null as its standard input" do
+      stdin_path = tmp_path('daemon-stdin')
+      status, error = run_with_socket_streams do
+        Dante::Runner.new('test-process', :daemonize => true, :pid_path => tmp_path('dante.pid'), :log_path => tmp_path('dante.log')) {
+          File.write("#{stdin_path}.tmp", null_device?($stdin) ? "/dev/null" : $stdin.stat.ftype)
+          File.rename("#{stdin_path}.tmp", stdin_path)
+          sleep 100 }.execute
+      end
+
+      assert_equal [0, ""], [status, error]
+      wait_for_output(stdin_path)
+      assert_equal "/dev/null", File.read(stdin_path)
+    end
+
+    it "gives the daemon /dev/null as its standard input when $stdin is not STDIN" do
+      stdin_path = tmp_path('daemon-stdin')
+      status, error = run_with_socket_streams do
+        $stdin = StringIO.new("typed")
+        started = Dante::Runner.new('test-process', :daemonize => true, :pid_path => tmp_path('dante.pid'), :log_path => tmp_path('dante.log')) {
+          File.write("#{stdin_path}.tmp", null_device?(STDIN) ? "/dev/null" : STDIN.stat.ftype)
+          File.rename("#{stdin_path}.tmp", stdin_path)
+          sleep 100 }.execute
+        raise "not started" unless started
+      end
+
+      assert_equal [0, ""], [status, error]
+      wait_for_output(stdin_path)
+      assert_equal "/dev/null", File.read(stdin_path)
+    end
+
+    it "gives the daemon /dev/null as its standard input when STDIN is closed" do
+      stdin_path = tmp_path('daemon-stdin')
+      status, error = run_with_socket_streams do
+        STDIN.close
+        started = Dante::Runner.new('test-process', :daemonize => true, :pid_path => tmp_path('dante.pid'), :log_path => tmp_path('dante.log')) {
+          fd0 = IO.for_fd(0, autoclose: false)
+          File.write("#{stdin_path}.tmp", null_device?(fd0) ? "/dev/null" : fd0.stat.ftype)
+          File.rename("#{stdin_path}.tmp", stdin_path)
+          sleep 100 }.execute
+        raise "not started" unless started
+      end
+
+      assert_equal [0, ""], [status, error]
+      wait_for_output(stdin_path)
+      assert_equal "/dev/null", File.read(stdin_path)
+    end
+
     it "redirects all three streams to /dev/null without a log file" do
       status, error = run_with_socket_streams do
         Dante::Runner.new('test-process', :log_path => false).send(:redirect_output!)
@@ -533,6 +595,35 @@ describe "dante runner" do
       assert process_alive?(new_pid)
     end
 
+    it "restarts the daemon as a daemon with #restart" do
+      ran_in = tmp_path('ran-in')
+      test_pid = Process.pid
+      runner = Dante::Runner.new('test-process', @run_options) {
+        File.write("#{ran_in}.tmp", Process.pid.to_s)
+        File.rename("#{ran_in}.tmp", ran_in)
+        sleep 100 unless Process.pid == test_pid } # returns if it runs in this process
+      result = nil
+      output = capture_stdout { result = runner.restart }
+
+      wait_for_output(ran_in)
+      refute_equal test_pid.to_s, File.read(ran_in), "the service ran in the caller"
+      assert_equal true, result
+      assert_match(/Daemonized process killed after term.*Daemon has started successfully/m, output)
+      refute process_alive?(@pid), "the first daemon is still running"
+      assert_equal daemon_pid(@pid_path).to_s, File.read(ran_in)
+    end
+
+    it "neither stops nor restarts the daemon with :kill or :restart given as false" do
+      [{ :kill => false }, { :restart => false }].each do |off|
+        output = capture_stdout {
+          Dante::Runner.new('test-process', @run_options.merge(off)) { sleep 100 }.execute }
+
+        assert_equal ["Process is already started\n"], output.lines.grep_v(/: warning: /), off.inspect
+        assert_equal "#{@pid}\n", File.read(@pid_path), off.inspect
+        assert process_alive?(@pid), off.inspect
+      end
+    end
+
     it "stops the daemon with -k and removes its pid file" do
       ARGV.replace(['-k', '-P', @pid_path])
       output = capture_stdout { Dante::Runner.new('test-process').execute }
@@ -543,6 +634,99 @@ describe "dante runner" do
       refute File.exist?(@pid_path), "pid file left behind after -k"
     end
   end # controlling a running daemon
+
+  describe "with daemonize flag, stopping a daemon while its pid file changes" do
+    before do
+      @pid_path = tmp_path('dante.pid')
+      @ready = tmp_path('ready')
+    end
+
+    after do
+      if @replacement
+        Process.kill('KILL', @replacement)
+        Process.wait(@replacement)
+      end
+    end
+
+    # Starts a daemon that runs on_term when it gets SIGTERM, and returns its pid.
+    def start_daemon(pid_path = @pid_path, &on_term)
+      ready = @ready
+      capture_stdout {
+        Dante::Runner.new('test-process', :daemonize => true, :pid_path => pid_path, :log_path => tmp_path('dante.log')) {
+          trap('TERM', &on_term) if on_term
+          File.write(ready, "")
+          sleep 100 }.execute }
+      wait_for_output(ready)
+      daemon_pid(pid_path)
+    end
+
+    it "stops it from two stops at once, neither of them failing" do
+      pid = start_daemon { sleep 0.5; exit }
+      output = capture_stdout {
+        stoppers = 2.times.map { Thread.new { Dante::Runner.new('test-process', :pid_path => @pid_path).stop } }
+        stoppers.each { |t| t.report_on_exception = false }
+        stoppers.each(&:value) }
+
+      assert_equal 2, output.scan(/Daemonized process killed after term/).size, output
+      refute process_alive?(pid)
+      refute File.exist?(@pid_path), "pid file left behind"
+    end
+
+    it "keeps the pid file when a new daemon recorded its pid there meanwhile" do
+      replacement = @replacement = spawn('sleep', '60')
+      pid_path = @pid_path
+      pid = start_daemon { File.write(pid_path, "#{replacement}\n"); exit }
+      output = capture_stdout { Dante::Runner.new('test-process', :pid_path => @pid_path).stop }
+
+      assert_match(/Daemonized process killed after term/, output)
+      refute process_alive?(pid)
+      assert_equal "#{replacement}\n", File.read(@pid_path)
+    end
+
+    it "sends SIGKILL with :force to the daemon it signalled, not to a new one in the pid file" do
+      replacement = @replacement = spawn('sleep', '60')
+      pid_path = @pid_path
+      pid = start_daemon { File.write(pid_path, "#{replacement}\n") } # survives SIGTERM
+      output = capture_stdout { Dante::Runner.new('test-process', :pid_path => @pid_path, :force => true).stop }
+
+      assert_match(/Sent SIGKILL to PID: #{pid} /, output)
+      assert_match(/Daemonized process killed after kill/, output)
+      refute process_alive?(pid)
+      assert process_alive?(replacement), "the new daemon was killed"
+      assert_equal "#{replacement}\n", File.read(@pid_path)
+    end
+
+    it "returns soon after the daemon stops, well within the second it used to wait first" do
+      # A process of this test's that takes 0.2 seconds to stop on SIGTERM, reaped as soon
+      # as it exits (a daemon is reaped by init), stands in for the daemon.
+      script = "trap('TERM') { sleep 0.2; exit }; File.write(ARGV[0], ''); sleep 100"
+      pid = spawn(RbConfig.ruby, '-e', script, @ready)
+      reaper = Process.detach(pid)
+      wait_for_output(@ready)
+      File.write(@pid_path, "#{pid}\n")
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      output = capture_stdout { Dante::Runner.new('test-process', :pid_path => @pid_path).stop }
+      elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+      assert_match(/Daemonized process killed after term/, output)
+      assert_operator elapsed, :<, 0.8
+    ensure
+      if reaper && reaper.alive?
+        Process.kill('KILL', pid)
+        reaper.join
+      end
+    end
+
+    it "stops a daemon whose pid file path has glob characters in it" do
+      pid_path = tmp_path('run[1]/dante.pid')
+      pid = start_daemon(pid_path)
+      output = capture_stdout { Dante::Runner.new('test-process', :pid_path => pid_path).stop }
+
+      assert_match(/Daemonized process killed after term/, output)
+      refute process_alive?(pid)
+      refute File.exist?(pid_path), "pid file left behind"
+    end
+  end # pid file changes
 
   describe "with daemonize flag and no log path" do
     before do

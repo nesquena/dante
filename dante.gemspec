@@ -11,6 +11,12 @@ Gem::Specification.new do |s|
   s.summary     = %q{Turn any process into a demon}
   s.description = %q{Turn any process into a demon.}
   s.license     = "MIT"
+  s.metadata    = {
+    "source_code_uri"       => "https://github.com/nesquena/dante",
+    "changelog_uri"         => "https://github.com/nesquena/dante/blob/master/CHANGELOG.md",
+    "bug_tracker_uri"       => "https://github.com/nesquena/dante/issues",
+    "rubygems_mfa_required" => "true"
+  }
 
   s.files         = `git ls-files`.split("\n")
   s.test_files    = `git ls-files -- {test,spec,features}/*`.split("\n")

@@ -56,17 +56,18 @@ module Dante
 
       @verify_options_hook.call(self.options) if @verify_options_hook
 
-      if options.include?(:kill)
+      # A key given as false is off; -k with no argument sets :kill to nil, which is on.
+      if options.fetch(:kill, false) != false
         self.stop
       else # create process
-        self.stop if options.include?(:restart)
+        self.stop if options.fetch(:restart, false) != false
 
         # If a username, uid, groupname, or gid is passed,
         # drop privileges accordingly.
         switch_user(options[:user], options[:group]) if options[:user] || options[:group]
 
         @startup_command = block if block_given?
-        options[:daemonize] ? daemonize : start
+        start_service
       end
     end
 
@@ -89,6 +90,7 @@ module Dante
             trap_signals
             store_pid(Process.pid)
             redirect_output!
+            reopen_stream(IO.for_fd(0, autoclose: false), File::NULL, 'r') # fd 0, whatever STDIN or $stdin is
             start
           end
           started = daemon_survives?(daemon)
@@ -130,26 +132,27 @@ module Dante
     def start
       log "Starting #{@name} service..."
 
-      if log_path = options[:log_path] && options[:daemonize].nil?
-         redirect_output! 
-      end
+      # A daemon has redirected its output already
+      redirect_output! if options[:log_path] && !options[:daemonize]
 
       trap_signals
 
       @startup_command.call(self.options) if @startup_command
     end
 
-    # Stops a daemonized process
+    # Stops a daemonized process. The pid file is read once: the daemon it names then is
+    # the one signalled and waited for, whatever the pid file says by the time it stops.
     def stop(kill_arg=nil)
-      if self.daemon_running?
-        if wait_for_stop(kill_pid(kill_arg || options[:kill]))
-          FileUtils.rm options[:pid_path] # Only kill if we stopped the daemon
+      pid = read_pid(options[:pid_path])
+      if pid && process_running?(pid)
+        if wait_for_stop(pid, kill_pid(pid, kill_arg || options[:kill]))
+          remove_pid_file(pid) # Only once the daemon has stopped
           log "Daemonized process killed after term."
         else
           log "Failed to kill daemonized process"
           if options[:force]
-            if wait_for_stop(kill_pid(kill_arg || options[:kill], 'KILL'))
-              FileUtils.rm options[:pid_path] # Only kill if we stopped the daemon
+            if wait_for_stop(pid, kill_pid(pid, kill_arg || options[:kill], 'KILL'))
+              remove_pid_file(pid) # Only once the daemon has stopped
               log "Daemonized process killed after kill."
             end
           end
@@ -162,7 +165,7 @@ module Dante
 
     def restart
       self.stop
-      self.start
+      start_service
     end
 
     def interrupt
@@ -182,17 +185,16 @@ module Dante
     # Returns running for the daemonized process
     # self.daemon_running?
     def daemon_running?
-      return false unless File.exist?(options[:pid_path])
       return false unless pid = read_pid(options[:pid_path])
-      Process.kill 0, pid
-      true
-    rescue Errno::EPERM # the process exists but belongs to another user
-      true
-    rescue Errno::ESRCH
-      false
+      process_running?(pid)
     end
 
     protected
+
+    # Starts the service: as a daemon with :daemonize, else in the foreground.
+    def start_service
+      options[:daemonize] ? daemonize : start
+    end
 
     def parse_options
       headline = [@name, @description].compact.join(" - ")
@@ -219,7 +221,7 @@ module Dante
           options[:log_path] = v
         end
 
-        opts.on("-k", "--kill [PORT]", String, "Kill specified running daemons - leave blank to kill all.") do |v|
+        opts.on("-k", "--kill [PORT]", String, "Stop the daemon in the pid file (PORT is ignored)") do |v|
           options[:kill] = v
         end
 
@@ -320,38 +322,49 @@ module Dante
     end
 
     # Removes the pid file if it still holds pid (another start may have replaced it).
+    # ceiling: the read and the delete are two steps, so a daemon that writes its pid between them loses its
+    # pid file; a lock on the pid file (flock) would close that window
     def remove_pid_file(pid)
       File.delete(options[:pid_path]) if read_pid(options[:pid_path]) == pid
     rescue Errno::ENOENT
     end
 
-    # The pid in pid_file, or nil when it holds none: a pid file left empty by a crash
-    # between creating and writing it names no process (and pid 0 or a negative pid would
-    # signal a whole process group), nor does a number too large for a pid_t.
+    # The pid in pid_file, or nil when there is none: no pid file, or one left empty by a
+    # crash between creating and writing it, names no process (and pid 0 or a negative pid
+    # would signal a whole process group), nor does a number too large for a pid_t.
     def read_pid(pid_file)
+      return unless File.exist?(pid_file)
       pid = File.read(pid_file).to_i
       pid if pid > 0 && pid < 2**31
+    rescue Errno::ENOENT # removed since the check
     end
 
-    # Sends sig to the daemons, and returns whether it reached any of them.
-    def kill_pid(k='*', sig='TERM')
-      Dir[options[:pid_path]].count do |f|
-        begin
-          next false unless pid = read_pid(f)
-          Process.kill(sig, pid)
-          log "Sent SIG#{sig} to PID: #{pid} at #{f}"
-          true
-        rescue => e
-          log "Failed to stop! #{k}: #{e}"
-          false
-        end
-      end > 0
+    # Whether pid is a running process, counting one that belongs to another user.
+    def process_running?(pid)
+      Process.kill 0, pid
+      true
+    rescue Errno::EPERM # the process exists but belongs to another user
+      true
+    rescue Errno::ESRCH
+      false
     end
 
-    # Waits for the daemon to stop once a signal reached it. When none did (the daemon
-    # belongs to another user), it cannot stop, so this only checks once.
-    def wait_for_stop(signalled)
-      signalled ? until_true(MAX_START_TRIES) { self.daemon_stopped? } : self.daemon_stopped?
+    # Sends sig to pid, the daemon, and returns whether it reached it.
+    def kill_pid(pid, k, sig='TERM')
+      Process.kill(sig, pid)
+      log "Sent SIG#{sig} to PID: #{pid} at #{options[:pid_path]}"
+      true
+    rescue => e
+      log "Failed to stop! #{k}: #{e}"
+      false
+    end
+
+    # Waits for pid, the daemon, to stop once a signal reached it, checking every 0.1
+    # seconds (a Rational step, so the steps add up to exactly MAX_START_TRIES seconds).
+    # When no signal reached it (the daemon belongs to another user), it cannot stop, so
+    # this only checks once.
+    def wait_for_stop(pid, signalled)
+      signalled ? until_true(MAX_START_TRIES, Rational(1, 10)) { !process_running?(pid) } : !process_running?(pid)
     end
 
     # Redirect output based on log settings (reopens stdout/stderr to specified logfile)
