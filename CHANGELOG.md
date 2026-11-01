@@ -1,13 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-11-01)
+
+Changes since 0.3.0:
 
 - Fixed: the daemon writes its pid file to a new file in the same directory and renames it into place, so a
   symlink or another file already at the pid file's path is replaced instead of written through, and a reader
   never sees a half-written pid file. The pid file now always belongs to the daemon's user, with mode 0666 less
   the umask; an existing pid file used to keep its owner and mode. In a directory the daemon's user cannot write
   (a pid file an init script created and handed to that user, say), it writes the existing pid file in place as
-  before, except through a symlink. (#31, @nesquena)
+  before, except through a symlink. **What to do:** if another user's tool reads the pid file (a monitor such as
+  god), start the daemon with a umask that leaves it readable (022 gives 0644). (#31, @nesquena)
 - Fixed: stopping (`-k`, `stop`) and `daemon_running?` ignore a pid file that another user could have written to
   have the process it names stopped: a symlink, a file with other hard links, or a file owned by neither root, nor
   the user stopping, nor any of the uids the process runs as. A stop then keeps the pid file and returns false,
