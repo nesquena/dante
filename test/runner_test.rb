@@ -313,6 +313,20 @@ describe "dante runner" do
       assert_equal 0644, File.stat(@logfile).mode & 0777
     end
 
+    it "gives the daemon /dev/null as its standard input" do
+      stdin_path = tmp_path('daemon-stdin')
+      status, error = run_with_socket_streams do
+        Dante::Runner.new('test-process', :daemonize => true, :pid_path => tmp_path('dante.pid'), :log_path => tmp_path('dante.log')) {
+          File.write("#{stdin_path}.tmp", null_device?($stdin) ? "/dev/null" : $stdin.stat.ftype)
+          File.rename("#{stdin_path}.tmp", stdin_path)
+          sleep 100 }.execute
+      end
+
+      assert_equal [0, ""], [status, error]
+      wait_for_output(stdin_path)
+      assert_equal "/dev/null", File.read(stdin_path)
+    end
+
     it "redirects all three streams to /dev/null without a log file" do
       status, error = run_with_socket_streams do
         Dante::Runner.new('test-process', :log_path => false).send(:redirect_output!)

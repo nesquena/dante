@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: a daemon's standard input is now `/dev/null`. It stayed on the terminal or pipe it was started from, so a
+  daemon reading stdin read the user's keystrokes, and a terminal or pty that started it never saw end-of-file
+  while the daemon ran. (#XXXX, @nesquena)
+
 ## 0.3.0 (2026-10-31)
 
 Changes since 0.2.0:

@@ -89,6 +89,7 @@ module Dante
             trap_signals
             store_pid(Process.pid)
             redirect_output!
+            reopen_stream($stdin, File::NULL, 'r') # read nothing from the caller's terminal
             start
           end
           started = daemon_survives?(daemon)
