@@ -358,6 +358,23 @@ describe "dante runner" do
       assert_equal "/dev/null", File.read(stdin_path)
     end
 
+    it "gives the daemon /dev/null as its standard input when STDIN is closed" do
+      stdin_path = tmp_path('daemon-stdin')
+      status, error = run_with_socket_streams do
+        STDIN.close
+        started = Dante::Runner.new('test-process', :daemonize => true, :pid_path => tmp_path('dante.pid'), :log_path => tmp_path('dante.log')) {
+          fd0 = IO.for_fd(0, autoclose: false)
+          File.write("#{stdin_path}.tmp", null_device?(fd0) ? "/dev/null" : fd0.stat.ftype)
+          File.rename("#{stdin_path}.tmp", stdin_path)
+          sleep 100 }.execute
+        raise "not started" unless started
+      end
+
+      assert_equal [0, ""], [status, error]
+      wait_for_output(stdin_path)
+      assert_equal "/dev/null", File.read(stdin_path)
+    end
+
     it "redirects all three streams to /dev/null without a log file" do
       status, error = run_with_socket_streams do
         Dante::Runner.new('test-process', :log_path => false).send(:redirect_output!)
