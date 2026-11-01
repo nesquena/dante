@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-11-01)
+
+Changes since 0.3.0:
 
 - Fixed: the daemon writes its pid file to a new file in the same directory and renames it into place, so a
   symlink or another file already at the pid file's path is replaced instead of written through, and a reader
