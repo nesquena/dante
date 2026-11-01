@@ -9,7 +9,7 @@
   started". The lock file is created by the daemon's user with mode 0600 and stays after the daemon stops.
   **What to do:** nothing in most setups, since the lock file goes in the pid file's directory, which the daemon's
   user can already write. If you change the `-u` user of a daemon whose pid file path was used before, remove the
-  old lock file, which the new user cannot open. (#XXXX, @nesquena)
+  old lock file, which the new user cannot open. (#32, @nesquena)
 - Fixed: a daemon's standard input is now `/dev/null`. It stayed on the terminal or pipe it was started from, so a
   daemon reading stdin read the user's keystrokes, and a terminal or pty that started it never saw end-of-file
   while the daemon ran. (#30, @nesquena)
