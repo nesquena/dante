@@ -930,6 +930,41 @@ describe "dante runner" do
     end
   end # -p
 
+  describe "with the :argv option" do
+    before do
+      ARGV.replace(['--host-program-flag', 'file.rb']) # options dante does not know
+    end
+
+    # The port the startup block of runner gets, and ARGV afterwards.
+    def port_from(runner, opts = {})
+      port = :not_run
+      capture_stdout { runner.execute(opts) { |o| port = o[:port] } }
+      [port, ARGV]
+    end
+
+    it "parses the given options instead of ARGV, and leaves both arrays as they were" do
+      argv = ['-p', '1234', 'extra'].freeze
+
+      assert_equal [1234, ['--host-program-flag', 'file.rb']], port_from(Dante::Runner.new('test-process', :argv => argv))
+      assert_equal ['-p', '1234', 'extra'], argv
+    end
+
+    it "parses nothing when given an empty array" do
+      assert_equal [nil, ['--host-program-flag', 'file.rb']], port_from(Dante::Runner.new('test-process', :argv => []))
+    end
+
+    it "takes the options to parse from execute too" do
+      assert_equal [4321, ['--host-program-flag', 'file.rb']], port_from(Dante::Runner.new('test-process'), :argv => ['-p', '4321'])
+    end
+
+    it "takes the options to parse from Dante.run" do
+      port = :not_run
+      capture_stdout { Dante.run('test-process', :argv => ['-p', '1234']) { |o| port = o[:port] } }
+
+      assert_equal 1234, port
+    end
+  end # :argv
+
   describe "with parsing options" do
     before do
       ARGV.replace(['-t test_text'])

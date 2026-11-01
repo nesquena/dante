@@ -193,6 +193,22 @@ Dante::Runner.new('gitdocs').execute(:daemonize => true, :restart => true, :pid_
 
 so you can use dante as part of a more complex CLI executable.
 
+### Options from somewhere other than ARGV
+
+`execute` parses the command-line options in `ARGV`. Inside a program that has options of its own (a test runner,
+say, or a Rake task), pass dante the options to parse with `:argv` instead, to `Dante::Runner.new`, `Dante.run`
+or `execute`:
+
+```ruby
+# parses only these, and leaves ARGV alone
+Dante::Runner.new('gitdocs', :argv => ['-d', '-P', @pid]).execute { something! }
+# parses nothing
+Dante::Runner.new('gitdocs').execute(:argv => [], :daemonize => true, :pid_path => @pid) { something! }
+```
+
+Without `:argv`, ARGV is parsed as before, and the options dante knows are removed from it. The array given as
+`:argv` is never changed.
+
 ## systemd
 
 Under systemd, let systemd run the process in the foreground (`Type=simple`), as the user it names, with the
