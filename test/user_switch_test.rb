@@ -245,6 +245,64 @@ describe "dante runner switching user and group" do
     assert_equal "#{other}\n", File.read(@pid_path)
   end
 
+  it "does not follow a symlink at the pid file's path to a pid file of root's" do
+    other = spawn_as(0)
+    roots_pid_file = tmp_path('root-service.pid') # outside @dir, which nobody can write
+    File.write(roots_pid_file, "#{other}\n")
+    File.symlink(roots_pid_file, @pid_path)
+    File.lchown(@nobody.uid, nil, @pid_path)
+    runner = Dante::Runner.new('test-process', :pid_path => @pid_path, :force => true)
+    output = capture_stdout { runner.stop }
+
+    assert process_alive?(other), "the process named by the symlink's target was stopped"
+    assert_equal "No test-process processes are running\n", output
+    assert_equal false, runner.daemon_running?
+    assert File.symlink?(@pid_path)
+  end
+
+  it "does not stop a process named by a pid file with other hard links" do
+    other = spawn_as(0)
+    roots_pid_file = tmp_path('root-service.pid')
+    File.write(roots_pid_file, "#{other}\n")
+    File.link(roots_pid_file, @pid_path)
+    runner = Dante::Runner.new('test-process', :pid_path => @pid_path, :force => true)
+    output = capture_stdout { runner.stop }
+
+    assert process_alive?(other), "the process named by the hard-linked file was stopped"
+    assert_equal "pid file #{@pid_path} has other hard links; not stopping it\n", output
+    assert_equal false, runner.daemon_running?
+  end
+
+  it "counts a daemon whose effective uid owns the pid file as running" do
+    run_in_child do
+      Process::UID.eid = @nobody.uid # the real uid stays root's
+      Dante::Runner.new('test-process', :daemonize => true, :pid_path => @pid_path, :log_path => @log_path) { sleep 100 }.execute
+    end
+    daemon_pid(@pid_path)
+    assert_equal @nobody.uid, File.stat(@pid_path).uid
+
+    assert_equal true, Dante::Runner.new('test-process', :pid_path => @pid_path).daemon_running?
+  end
+
+  it "writes a pid file made for it in a directory it cannot write, and can be stopped" do
+    dir = tmp_path('run') # root's, mode 0755
+    Dir.mkdir(dir, 0755)
+    pid_path = File.join(dir, 'dante.pid')
+    File.write(pid_path, "")
+    File.chown(@nobody.uid, nil, pid_path)
+    run_in_child do
+      ARGV.replace(['-d', '-P', pid_path, '-l', @log_path, '-u', 'nobody'])
+      raise "not started" unless Dante::Runner.new('test-process').execute { sleep 100 }
+    end
+    pid = daemon_pid(pid_path)
+    assert_equal ['dante.pid'], Dir.children(dir)
+    ARGV.replace(['-k', '-P', pid_path])
+    output = capture_stdout { Dante::Runner.new('test-process').execute }
+
+    assert_match(/Daemonized process killed after term/, output)
+    refute process_alive?(pid), "daemon still running after -k"
+  end
+
   it "stops a process of another user named by a pid file of root's" do
     other = spawn_as(@nobody.uid)
     File.write(@pid_path, "#{other}\n")

@@ -143,9 +143,9 @@ module Dante
     # Stops a daemonized process. The pid file is read once: the daemon it names then is
     # the one signalled and waited for, whatever the pid file says by the time it stops.
     def stop(kill_arg=nil)
-      pid, pid_file_uid = read_pid_file(options[:pid_path])
+      pid, pid_file_stat = read_pid_file(options[:pid_path])
       running = pid && process_running?(pid)
-      if running && (untrusted = untrusted_pid_file(pid, pid_file_uid))
+      if running && (untrusted = untrusted_pid_file(pid, pid_file_stat))
         log "#{untrusted}; not stopping it"
         false
       elsif running
@@ -190,9 +190,9 @@ module Dante
     # written (see untrusted_pid_file) names no daemon.
     # self.daemon_running?
     def daemon_running?
-      pid, pid_file_uid = read_pid_file(options[:pid_path])
+      pid, pid_file_stat = read_pid_file(options[:pid_path])
       return false unless pid
-      process_running?(pid) && !untrusted_pid_file(pid, pid_file_uid)
+      process_running?(pid) && !untrusted_pid_file(pid, pid_file_stat)
     end
 
     protected
@@ -304,14 +304,24 @@ module Dante
     # Writes pid to a new file in the pid file's directory and renames it into place, so
     # that whatever was at the pid file's path (a symlink, or another file) is replaced
     # rather than written into, and a reader sees either the old pid file or the whole new
-    # one.
+    # one. In a directory the daemon cannot write, it writes the pid file there already.
     def store_pid(pid)
       pid_path = options[:pid_path]
       FileUtils.mkdir_p(File.dirname(pid_path))
       tmp_path = "#{pid_path}.#{pid}.tmp"
       FileUtils.rm_f(tmp_path) # one left by a crash (a symlink is removed, not followed)
-      # EXCL: never written through a file or symlink put there since
-      File.open(tmp_path, File::WRONLY | File::CREAT | File::EXCL) { |f| f.write("#{pid}\n") }
+      begin
+        # EXCL: never written through a file or symlink put there since
+        File.open(tmp_path, File::WRONLY | File::CREAT | File::EXCL) { |f| f.write("#{pid}\n") }
+      rescue Errno::EACCES
+        # A pid file made for the daemon's user in a directory it cannot write, as an init
+        # script might. Without CREAT, a missing one fails, as it did before.
+        # ceiling: not atomic, so a reader can see it half-written; giving the daemon's user
+        # the directory restores the rename.
+        tmp_path = nil
+        File.open(pid_path, File::WRONLY | File::TRUNC | File::NOFOLLOW) { |f| f.write("#{pid}\n") }
+        return
+      end
       File.rename(tmp_path, pid_path)
     ensure
       FileUtils.rm_f(tmp_path) if tmp_path # left only when writing or renaming failed
@@ -353,30 +363,35 @@ module Dante
       read_pid_file(pid_file)&.first
     end
 
-    # The pid in pid_file, as read_pid gives it, and the uid of the pid file's owner, both
-    # from the one file opened; nil without a pid.
+    # The pid in pid_file, as read_pid gives it, and the pid file's File::Stat, both from
+    # the one file opened; nil without a pid. A symlink is not followed, and names no pid
+    # (a start replaces it).
     def read_pid_file(pid_file)
       return unless File.exist?(pid_file)
-      File.open(pid_file) do |file|
+      File.open(pid_file, File::RDONLY | File::NOFOLLOW) do |file|
         pid = file.read.to_i
-        [pid, file.stat.uid] if pid > 0 && pid < 2**31
+        [pid, file.stat] if pid > 0 && pid < 2**31
       end
-    rescue Errno::ENOENT # removed since the check
+    rescue Errno::ENOENT, Errno::ELOOP # removed since the check, or a symlink
     end
 
-    # Why the pid file, owned by pid_file_uid, cannot be trusted to name pid, its daemon:
-    # it is owned by neither root, nor the user that pid runs as, nor the user running this
-    # (whose own permissions are all a stop could use), so another user could have written
-    # it to have that process stopped. nil when it can be trusted, or when the owner of pid
-    # cannot be told (it has gone, say).
-    # ceiling: the owner of a process is read from /proc (Linux); elsewhere every pid file
-    # is trusted, as before. `ps -o ruid= -p PID` would tell on other Unixes.
-    def untrusted_pid_file(pid, pid_file_uid)
+    # Why the pid file, with File::Stat pid_file_stat, cannot be trusted to name pid, its
+    # daemon: it has other hard links (which keep the owner of the file they link to), or
+    # it is owned by neither root, nor a user that pid runs as (any of its uids), nor the
+    # user running this (whose own permissions are all a stop could use), so another user
+    # could have written it to have that process stopped. nil when it can be trusted, or
+    # when the owner of pid cannot be told (it has gone, say).
+    # ceiling: the owner of a process is read from /proc (Linux); elsewhere only the hard
+    # links are checked. `ps -o ruid=,uid= -p PID` would tell the owner on other Unixes.
+    def untrusted_pid_file(pid, pid_file_stat)
+      return "pid file #{options[:pid_path]} has other hard links" if pid_file_stat.nlink > 1
+      pid_file_uid = pid_file_stat.uid
       return if pid_file_uid == 0 || pid_file_uid == Process.euid
-      process_uid = Integer(File.read("/proc/#{pid}/status")[/^Uid:\s*(\d+)/, 1])
-      return if pid_file_uid == process_uid
-      "pid file #{options[:pid_path]} is owned by uid #{pid_file_uid} but process #{pid} belongs to uid #{process_uid}"
-    rescue SystemCallError, TypeError # no /proc, or no Uid line
+      uids = File.read("/proc/#{pid}/status")[/^Uid:(.*)$/, 1] or return # no Uid line
+      process_uids = uids.split.map { |uid| Integer(uid) } # real, effective, saved, filesystem
+      return if process_uids.include?(pid_file_uid)
+      "pid file #{options[:pid_path]} is owned by uid #{pid_file_uid} but process #{pid} belongs to uid #{process_uids.first}"
+    rescue SystemCallError # no /proc
     end
 
     # Whether pid is a running process, counting one that belongs to another user.
