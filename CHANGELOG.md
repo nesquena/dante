@@ -20,6 +20,11 @@
   symlinked log path, so does the file it points to), and a new one is created with mode 0644 less the umask:
   0644 with the usual umask of 022, 0640 with 027. **What to do:** for a log file other users can read under a
   stricter umask, create it with the mode you want before starting, or set the umask. (#31, @nesquena)
+- New `:argv` option: `Dante::Runner.new(name, :argv => [...])`, `Dante.run(name, :argv => [...])` or
+  `execute(:argv => [...])` parses the options in that array instead of `ARGV`, so dante can run inside a program
+  that has options of its own (a test runner, for one) without failing on them; `:argv => []` parses nothing. The
+  array is not changed. Without `:argv`, `ARGV` is parsed as before. Reported by @neomantic-zz in #4.
+  (#33, @nesquena)
 - Fixed: a daemon's standard input is now `/dev/null`. It stayed on the terminal or pipe it was started from, so a
   daemon reading stdin read the user's keystrokes, and a terminal or pty that started it never saw end-of-file
   while the daemon ran. (#30, @nesquena)

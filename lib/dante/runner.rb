@@ -47,10 +47,12 @@ module Dante
       @with_options = block
     end
 
-    # Executes the runner based on options
+    # Executes the runner based on options, after parsing the command-line options in
+    # options[:argv] (given to new or execute), or else in ARGV
     # @runner.execute
     # @runner.execute { ... }
     def execute(opts={}, &block)
+      options[:argv] = opts[:argv] if opts.key?(:argv) # needed before the rest of opts is merged
       parse_options
       self.options.merge!(opts)
 
@@ -250,7 +252,7 @@ module Dante
         
         # Load options specified through 'with_options'
         instance_exec(opts, &@with_options) if @with_options
-      end.parse!
+      end.parse!(options[:argv] ? options[:argv].dup : ARGV) # a copy of the caller's array
       options
     end
 
