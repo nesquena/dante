@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- Fixed: the daemon writes its pid file to a new file in the same directory and renames it into place, so a
+  symlink or another file already at the pid file's path is replaced instead of written through, and a reader
+  never sees a half-written pid file. The pid file now always belongs to the daemon's user, with mode 0666 less
+  the umask; an existing pid file used to keep its owner and mode. In a directory the daemon's user cannot write
+  (a pid file an init script created and handed to that user, say), it writes the existing pid file in place as
+  before, except through a symlink. (#31, @nesquena)
+- Fixed: stopping (`-k`, `stop`) and `daemon_running?` ignore a pid file that another user could have written to
+  have the process it names stopped: a symlink, a file with other hard links, or a file owned by neither root, nor
+  the user stopping, nor any of the uids the process runs as. A stop then keeps the pid file and returns false,
+  saying "No <name> processes are running" for a symlink and why for the others (for one, "pid file X is owned by
+  uid A but process P belongs to uid B; not stopping it"), and a start goes ahead and replaces the pid file. The owner is checked through `/proc` (Linux); elsewhere only symlinks and
+  hard links are. **What to do:** nothing for pid files the daemon writes itself, including a daemon started with
+  `sudo ... -u nobody` and stopped with `sudo ... -k`; a pid file written by another tool must be a plain file
+  belonging to root or to the daemon's user. (#31, @nesquena)
+- Fixed: the log file is no longer given mode 0644 at every start. An existing log file keeps its mode (through a
+  symlinked log path, so does the file it points to), and a new one is created with mode 0644 less the umask:
+  0644 with the usual umask of 022, 0640 with 027. **What to do:** for a log file other users can read under a
+  stricter umask, create it with the mode you want before starting, or set the umask. (#31, @nesquena)
 - New `:argv` option: `Dante::Runner.new(name, :argv => [...])`, `Dante.run(name, :argv => [...])` or
   `execute(:argv => [...])` parses the options in that array instead of `ARGV`, so dante can run inside a program
   that has options of its own (a test runner, for one) without failing on them; `:argv => []` parses nothing. The
