@@ -38,6 +38,20 @@ describe "dante runner" do
     end
   end # no daemonize
 
+  describe "with daemonize set to false and a log file" do
+    it "writes its output to the log file" do
+      logfile = tmp_path('dante-foreground.log')
+      capture_stdout {
+        pid = fork do
+          Dante::Runner.new('test-process', :daemonize => false, :log_path => logfile) { puts "Started" }.execute
+          exit!(0)
+        end
+        Process.wait(pid) }
+
+      assert_equal "Started\n", (File.read(logfile) if File.exist?(logfile))
+    end
+  end # daemonize false
+
   describe "with daemonize flag" do
     before do
       @process = TestingProcess.new('b', @tmpdir)

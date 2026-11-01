@@ -132,9 +132,8 @@ module Dante
     def start
       log "Starting #{@name} service..."
 
-      if log_path = options[:log_path] && options[:daemonize].nil?
-         redirect_output! 
-      end
+      # A daemon has redirected its output already
+      redirect_output! if options[:log_path] && !options[:daemonize]
 
       trap_signals
 

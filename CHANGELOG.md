@@ -16,6 +16,8 @@
 - Fixed: `:kill => false` and `:restart => false` passed to `execute` are now off. Before, giving either key at
   all stopped the daemon (`:kill`) or stopped and restarted it (`:restart`), whatever its value. `:kill => nil`, as
   `-k` sets it, still stops. (#XXXX, @nesquena)
+- Fixed: `:daemonize => false` with a `:log_path` now writes the output to the log file, as leaving `:daemonize`
+  out does; before, the log path was ignored. (#XXXX, @nesquena)
 
 ## 0.3.0 (2026-10-31)
 
