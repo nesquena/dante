@@ -6,7 +6,7 @@
   `execute(:argv => [...])` parses the options in that array instead of `ARGV`, so dante can run inside a program
   that has options of its own (a test runner, for one) without failing on them; `:argv => []` parses nothing. The
   array is not changed. Without `:argv`, `ARGV` is parsed as before. Reported by @neomantic-zz in #4.
-  (#XXXX, @nesquena)
+  (#33, @nesquena)
 - Fixed: a daemon's standard input is now `/dev/null`. It stayed on the terminal or pipe it was started from, so a
   daemon reading stdin read the user's keystrokes, and a terminal or pty that started it never saw end-of-file
   while the daemon ran. (#30, @nesquena)
