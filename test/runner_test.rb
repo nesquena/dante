@@ -558,6 +558,78 @@ describe "dante runner" do
     end
   end # controlling a running daemon
 
+  describe "with daemonize flag, stopping a daemon while its pid file changes" do
+    before do
+      @pid_path = tmp_path('dante.pid')
+      @ready = tmp_path('ready')
+    end
+
+    after do
+      if @replacement
+        Process.kill('KILL', @replacement)
+        Process.wait(@replacement)
+      end
+    end
+
+    # Starts a daemon that runs on_term when it gets SIGTERM, and returns its pid.
+    def start_daemon(pid_path = @pid_path, &on_term)
+      ready = @ready
+      capture_stdout {
+        Dante::Runner.new('test-process', :daemonize => true, :pid_path => pid_path, :log_path => tmp_path('dante.log')) {
+          trap('TERM', &on_term) if on_term
+          File.write(ready, "")
+          sleep 100 }.execute }
+      wait_for_output(ready)
+      daemon_pid(pid_path)
+    end
+
+    it "stops it from two stops at once, neither of them failing" do
+      pid = start_daemon { sleep 0.5; exit }
+      output = capture_stdout {
+        stoppers = 2.times.map { Thread.new { Dante::Runner.new('test-process', :pid_path => @pid_path).stop } }
+        stoppers.each { |t| t.report_on_exception = false }
+        stoppers.each(&:value) }
+
+      assert_equal 2, output.scan(/Daemonized process killed after term/).size, output
+      refute process_alive?(pid)
+      refute File.exist?(@pid_path), "pid file left behind"
+    end
+
+    it "keeps the pid file when a new daemon recorded its pid there meanwhile" do
+      replacement = @replacement = spawn('sleep', '60')
+      pid_path = @pid_path
+      pid = start_daemon { File.write(pid_path, "#{replacement}\n"); exit }
+      output = capture_stdout { Dante::Runner.new('test-process', :pid_path => @pid_path).stop }
+
+      assert_match(/Daemonized process killed after term/, output)
+      refute process_alive?(pid)
+      assert_equal "#{replacement}\n", File.read(@pid_path)
+    end
+
+    it "sends SIGKILL with :force to the daemon it signalled, not to a new one in the pid file" do
+      replacement = @replacement = spawn('sleep', '60')
+      pid_path = @pid_path
+      pid = start_daemon { File.write(pid_path, "#{replacement}\n") } # survives SIGTERM
+      output = capture_stdout { Dante::Runner.new('test-process', :pid_path => @pid_path, :force => true).stop }
+
+      assert_match(/Sent SIGKILL to PID: #{pid} /, output)
+      assert_match(/Daemonized process killed after kill/, output)
+      refute process_alive?(pid)
+      assert process_alive?(replacement), "the new daemon was killed"
+      assert_equal "#{replacement}\n", File.read(@pid_path)
+    end
+
+    it "stops a daemon whose pid file path has glob characters in it" do
+      pid_path = tmp_path('run[1]/dante.pid')
+      pid = start_daemon(pid_path)
+      output = capture_stdout { Dante::Runner.new('test-process', :pid_path => pid_path).stop }
+
+      assert_match(/Daemonized process killed after term/, output)
+      refute process_alive?(pid)
+      refute File.exist?(pid_path), "pid file left behind"
+    end
+  end # pid file changes
+
   describe "with daemonize flag and no log path" do
     before do
       # Records the log path the daemon would redirect its output to, then sends the

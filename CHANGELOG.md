@@ -5,6 +5,11 @@
 - Fixed: a daemon's standard input is now `/dev/null`. It stayed on the terminal or pipe it was started from, so a
   daemon reading stdin read the user's keystrokes, and a terminal or pty that started it never saw end-of-file
   while the daemon ran. (#XXXX, @nesquena)
+- Fixed: stopping (`-k`, `stop`) reads the pid file once, then signals and waits for that daemon, and removes the
+  pid file only if it still names it. Two stops at once no longer fail with `Errno::ENOENT`; a new daemon that
+  records its pid while an old one stops keeps its pid file, and `--force` no longer sends it SIGKILL. A pid file
+  path containing `[`, `*` or `?` can now be stopped. The `-k` help text now says what it does: it stops the daemon
+  in the pid file, and ignores its optional argument. (#XXXX, @nesquena)
 
 ## 0.3.0 (2026-10-31)
 
