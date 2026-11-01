@@ -270,10 +270,81 @@ describe "dante runner" do
       assert_equal "640", "%o" % (File.stat(@created).mode & 0777)
     end
 
-    it "still gives the log file mode 0644" do
-      assert_equal 0644, File.stat(@logfile).mode & 0777
+    it "creates the log file with mode 0644 less the umask" do
+      assert_equal "640", "%o" % (File.stat(@logfile).mode & 0777)
     end
   end # umask
+
+  describe "with daemonize flag and something at the pid file's path already" do
+    before do
+      @pid_path = tmp_path('dante.pid')
+      @other = tmp_path('other-file')
+      File.write(@other, "not a pid\n")
+    end
+
+    # Starts a daemon on @pid_path and returns its pid.
+    def start_daemon
+      started = tmp_path('started')
+      capture_stdout {
+        Dante::Runner.new('test-process', :daemonize => true, :pid_path => @pid_path, :log_path => tmp_path('dante.log')) {
+          File.write(started, ""); sleep 100 }.execute }
+      wait_for_output(started)
+      daemon_pid(@pid_path)
+    end
+
+    it "replaces a symlink with the pid file instead of writing through it" do
+      File.symlink(@other, @pid_path)
+      pid = start_daemon
+
+      refute File.symlink?(@pid_path), "the pid file is still a symlink"
+      assert_equal "#{pid}\n", File.read(@pid_path)
+      assert_equal "not a pid\n", File.read(@other)
+      assert_empty Dir[File.join(@tmpdir, '*.tmp')], "temporary file left behind"
+    end
+
+    it "replaces a hard link to another file instead of writing into it" do
+      File.link(@other, @pid_path)
+      pid = start_daemon
+
+      assert_equal "#{pid}\n", File.read(@pid_path)
+      assert_equal "not a pid\n", File.read(@other)
+    end
+  end # pid file path taken
+
+  describe "with a log file there already" do
+    # Runs a runner in the foreground in a forked child, writing to log_path.
+    def run_with_log(log_path)
+      capture_stdout {
+        pid = fork do
+          Dante::Runner.new('test-process', :log_path => log_path) { puts "Started" }.execute
+          exit!(0)
+        end
+        Process.wait(pid) }
+    end
+
+    it "appends to it and keeps its mode" do
+      logfile = tmp_path('dante.log')
+      File.write(logfile, "earlier line\n")
+      File.chmod(0600, logfile)
+      run_with_log(logfile)
+
+      assert_equal "earlier line\nStarted\n", File.read(logfile)
+      assert_equal "600", "%o" % (File.stat(logfile).mode & 0777)
+    end
+
+    it "follows a symlink to it, and keeps the mode of the file it points to" do
+      target = tmp_path('target.log')
+      File.write(target, "")
+      File.chmod(0600, target)
+      logfile = tmp_path('dante.log')
+      File.symlink(target, logfile)
+      run_with_log(logfile)
+
+      assert File.symlink?(logfile)
+      assert_equal "Started\n", File.read(target)
+      assert_equal "600", "%o" % (File.stat(target).mode & 0777)
+    end
+  end # existing log file
 
   describe "with the standard streams connected to a socket" do
     # Runs the block in a forked child whose stdin, stdout and stderr are one end of a

@@ -191,4 +191,66 @@ describe "dante runner switching user and group" do
     assert_equal groups_of(member, passwd.gid), creds[:groups]
     assert_operator creds[:groups].size, :>, 1
   end
+
+  it "stops a daemon started with -u from root with -k" do
+    run_in_child do
+      ARGV.replace(['-d', '-P', @pid_path, '-l', @log_path, '-u', 'nobody'])
+      Dante::Runner.new('test-process').execute { sleep 100 }
+    end
+    pid = daemon_pid(@pid_path)
+    assert_equal @nobody.uid, File.stat(@pid_path).uid
+    ARGV.replace(['-k', '-P', @pid_path])
+    output = capture_stdout { Dante::Runner.new('test-process').execute }
+
+    assert_match(/Daemonized process killed after term/, output)
+    refute process_alive?(pid), "daemon still running after -k"
+    refute File.exist?(@pid_path), "pid file left behind after -k"
+  end
+
+  # A process that runs as the user uid until it is killed, reaped as soon as it exits
+  # (as init reaps a daemon). It returns once the process runs sleep: a signal that
+  # reaches the forked child before then is lost in the exec.
+  def spawn_as(uid)
+    pid = fork do
+      Process::UID.change_privilege(uid) unless uid == 0
+      exec('sleep', '60')
+    end
+    (@reapers ||= []) << Process.detach(pid)
+    assert wait_until { (File.read("/proc/#{pid}/comm") rescue nil) == "sleep\n" }, "sleep never ran"
+    pid
+  end
+
+  after do
+    Array(@reapers).each do |reaper|
+      begin
+        Process.kill('KILL', reaper.pid)
+      rescue Errno::ESRCH
+      end
+      reaper.join
+    end
+  end
+
+  it "does not stop a process of another user named by a pid file it does not own" do
+    other = spawn_as(0)
+    File.write(@pid_path, "#{other}\n")
+    File.chown(@nobody.uid, nil, @pid_path)
+    runner = Dante::Runner.new('test-process', :pid_path => @pid_path, :force => true)
+    result = :not_returned
+    output = capture_stdout { result = runner.stop }
+
+    assert process_alive?(other), "the other user's process was stopped"
+    assert_equal "pid file #{@pid_path} is owned by uid #{@nobody.uid} but process #{other} belongs to uid 0; not stopping it\n", output
+    assert_equal false, result
+    assert_equal false, runner.daemon_running?
+    assert_equal "#{other}\n", File.read(@pid_path)
+  end
+
+  it "stops a process of another user named by a pid file of root's" do
+    other = spawn_as(@nobody.uid)
+    File.write(@pid_path, "#{other}\n")
+    output = capture_stdout { Dante::Runner.new('test-process', :pid_path => @pid_path).stop }
+
+    assert_match(/Daemonized process killed after term/, output)
+    refute File.exist?(@pid_path), "pid file left behind"
+  end
 end
