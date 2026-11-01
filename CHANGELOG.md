@@ -24,6 +24,8 @@
   the defaults, the daemon failed to start), says what `-k` and `-f`/`--force` do, lists all the options, and adds
   the requirements (MRI on Unix, for `fork`), running under systemd, and log rotation with `copytruncate` (SIGHUP
   stops the daemon). (#XXXX, @nesquena)
+- The gemspec links the source code, this changelog and the issue tracker (shown on rubygems.org), and sets
+  `rubygems_mfa_required`, so pushes of the gem to rubygems.org now require MFA. (#XXXX, @nesquena)
 
 ## 0.3.0 (2026-10-31)
 
