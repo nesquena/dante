@@ -4,28 +4,28 @@
 
 - Fixed: a daemon's standard input is now `/dev/null`. It stayed on the terminal or pipe it was started from, so a
   daemon reading stdin read the user's keystrokes, and a terminal or pty that started it never saw end-of-file
-  while the daemon ran. (#XXXX, @nesquena)
+  while the daemon ran. (#30, @nesquena)
 - Fixed: stopping (`-k`, `stop`) reads the pid file once, then signals and waits for that daemon, and removes the
   pid file only if it still names it. Two stops at once no longer fail with `Errno::ENOENT`; a new daemon that
   records its pid while an old one stops keeps its pid file, and `--force` no longer sends it SIGKILL. A pid file
   path containing `[`, `*` or `?` can now be stopped. The `-k` help text now says what it does: it stops the daemon
-  in the pid file, and ignores its optional argument. (#XXXX, @nesquena)
+  in the pid file, and ignores its optional argument. (#30, @nesquena)
 - Fixed: stopping checks whether the daemon has exited every 0.1 seconds instead of every second, so `-k` returns
   as soon as the daemon has stopped rather than after a second at least. It still waits up to 5 seconds (and 5
-  more with `--force`). (#XXXX, @nesquena)
+  more with `--force`). (#30, @nesquena)
 - Fixed: `:kill => false` and `:restart => false` passed to `execute` are now off. Before, giving either key at
   all stopped the daemon (`:kill`) or stopped and restarted it (`:restart`), whatever its value. `:kill => nil`, as
-  `-k` sets it, still stops. (#XXXX, @nesquena)
+  `-k` sets it, still stops. (#30, @nesquena)
 - Fixed: `:daemonize => false` with a `:log_path` now writes the output to the log file, as leaving `:daemonize`
-  out does; before, the log path was ignored. (#XXXX, @nesquena)
+  out does; before, the log path was ignored. (#30, @nesquena)
 - Fixed: `Runner#restart` starts the service as a daemon when `:daemonize` is set, as `execute` does; it used to
-  run it in the foreground, in the calling process. (#XXXX, @nesquena)
+  run it in the foreground, in the calling process. (#30, @nesquena)
 - Documentation: the README's `-u nobody -G nogroup` example now gives pid and log paths that user can write (with
   the defaults, the daemon failed to start), says what `-k` and `-f`/`--force` do, lists all the options, and adds
   the requirements (MRI on Unix, for `fork`), running under systemd, and log rotation with `copytruncate` (SIGHUP
-  stops the daemon). (#XXXX, @nesquena)
+  stops the daemon). (#30, @nesquena)
 - The gemspec links the source code, this changelog and the issue tracker (shown on rubygems.org), and sets
-  `rubygems_mfa_required`, so pushes of the gem to rubygems.org now require MFA. (#XXXX, @nesquena)
+  `rubygems_mfa_required`, so pushes of the gem to rubygems.org now require MFA. (#30, @nesquena)
 
 ## 0.3.0 (2026-10-31)
 
