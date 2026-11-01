@@ -96,7 +96,8 @@ group, if given). The switch happens before the pid file and the log file are wr
 directories that user can write: the defaults, `/var/run/myapp.pid` and `/var/log/myapp.log`, are not, and the
 daemon would fail to start. Keep the pid file and the log in directories that only the daemon's user (or root) can
 write, never in one that other users can write, such as `/tmp`: another user could put a file or a symlink of
-their own at that path.
+their own at that path. On most Linux systems `/var/run` is emptied at boot, so create its directory at each boot
+(systemd's `RuntimeDirectory=`, below, or a `tmpfiles.d` entry) rather than once.
 
 ```
 ./bin/myapp -k -P /var/run/myapp.pid

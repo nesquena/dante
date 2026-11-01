@@ -1,3 +1,4 @@
+require 'stringio'
 require File.expand_path('../test_helper', __FILE__)
 require 'socket'
 
@@ -334,6 +335,22 @@ describe "dante runner" do
           File.write("#{stdin_path}.tmp", null_device?($stdin) ? "/dev/null" : $stdin.stat.ftype)
           File.rename("#{stdin_path}.tmp", stdin_path)
           sleep 100 }.execute
+      end
+
+      assert_equal [0, ""], [status, error]
+      wait_for_output(stdin_path)
+      assert_equal "/dev/null", File.read(stdin_path)
+    end
+
+    it "gives the daemon /dev/null as its standard input when $stdin is not STDIN" do
+      stdin_path = tmp_path('daemon-stdin')
+      status, error = run_with_socket_streams do
+        $stdin = StringIO.new("typed")
+        started = Dante::Runner.new('test-process', :daemonize => true, :pid_path => tmp_path('dante.pid'), :log_path => tmp_path('dante.log')) {
+          File.write("#{stdin_path}.tmp", null_device?(STDIN) ? "/dev/null" : STDIN.stat.ftype)
+          File.rename("#{stdin_path}.tmp", stdin_path)
+          sleep 100 }.execute
+        raise "not started" unless started
       end
 
       assert_equal [0, ""], [status, error]

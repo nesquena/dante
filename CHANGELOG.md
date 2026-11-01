@@ -19,7 +19,11 @@
 - Fixed: `:daemonize => false` with a `:log_path` now writes the output to the log file, as leaving `:daemonize`
   out does; before, the log path was ignored. (#30, @nesquena)
 - Fixed: `Runner#restart` starts the service as a daemon when `:daemonize` is set, as `execute` does; it used to
-  run it in the foreground, in the calling process. (#30, @nesquena)
+  run it in the foreground, in the calling process. **What to do:** to keep running the service in the calling
+  process, call `restart` on a runner without `:daemonize`. (#30, @nesquena)
+- For subclasses of `Dante::Runner`: `stop` now reads the pid file and checks the process itself instead of calling
+  `daemon_running?` and `daemon_stopped?`, and the protected `kill_pid` and `wait_for_stop` now take the pid first
+  (`kill_pid(pid, k, sig)`, `wait_for_stop(pid, signalled)`). (#30, @nesquena)
 - Documentation: the README's `-u nobody -G nogroup` example now gives pid and log paths that user can write (with
   the defaults, the daemon failed to start), says what `-k` and `-f`/`--force` do, lists all the options, and adds
   the requirements (MRI on Unix, for `fork`), running under systemd, and log rotation with `copytruncate` (SIGHUP

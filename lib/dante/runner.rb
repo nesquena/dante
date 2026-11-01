@@ -90,7 +90,7 @@ module Dante
             trap_signals
             store_pid(Process.pid)
             redirect_output!
-            reopen_stream($stdin, File::NULL, 'r') # read nothing from the caller's terminal
+            reopen_stream(STDIN, File::NULL, 'r') # fd 0, whatever $stdin is: read nothing from the caller's terminal
             start
           end
           started = daemon_survives?(daemon)
@@ -322,6 +322,8 @@ module Dante
     end
 
     # Removes the pid file if it still holds pid (another start may have replaced it).
+    # ceiling: the read and the delete are two steps, so a daemon that writes its pid between them loses its
+    # pid file; a lock on the pid file (flock) would close that window
     def remove_pid_file(pid)
       File.delete(options[:pid_path]) if read_pid(options[:pid_path]) == pid
     rescue Errno::ENOENT
