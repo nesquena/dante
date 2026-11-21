@@ -315,13 +315,17 @@ module Dante
       begin
         # EXCL: never written through a file or symlink put there since
         File.open(tmp_path, File::WRONLY | File::CREAT | File::EXCL) { |f| f.write("#{pid}\n") }
-      rescue Errno::EACCES
+      rescue Errno::EACCES => e
         # A pid file made for the daemon's user in a directory it cannot write, as an init
-        # script might. Without CREAT, a missing one fails, as it did before.
+        # script might. Without CREAT, a missing one re-raises the original EACCES, as before.
         # ceiling: not atomic, so a reader can see it half-written; giving the daemon's user
         # the directory restores the rename.
         tmp_path = nil
-        File.open(pid_path, File::WRONLY | File::TRUNC | File::NOFOLLOW) { |f| f.write("#{pid}\n") }
+        begin
+          File.open(pid_path, File::WRONLY | File::TRUNC | File::NOFOLLOW) { |f| f.write("#{pid}\n") }
+        rescue Errno::ENOENT
+          raise e
+        end
         return
       end
       File.rename(tmp_path, pid_path)

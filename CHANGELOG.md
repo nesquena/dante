@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: when daemonizing with a pid file in a directory the daemon cannot write and no pid file exists there yet,
+  the error reported is the original `Errno::EACCES` rather than `Errno::ENOENT` from the in-place fallback. (#XXXX,
+  @nesquena)
+
 ## 0.4.0 (2026-11-01)
 
 Changes since 0.3.0:
