@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Packaging: the gem now declares an explicit file list (`lib/`, `LICENSE`, `README.md`, `CHANGELOG.md`) instead of
+  `git ls-files`, so test files, CI workflows and repository metadata are no longer shipped in the gem. (#XXXX,
+  @nesquena)
+
 ## 0.4.0 (2026-11-01)
 
 Changes since 0.3.0:
