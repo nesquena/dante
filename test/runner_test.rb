@@ -353,6 +353,32 @@ describe "dante runner" do
       pid = daemon_pid(@pid_path)
       assert_equal "#{pid}\n", File.read(@pid_path)
     end
+
+    it "raises ELOOP and leaves the target unwritten when the pid path is a symlink" do
+      writable = tmp_path('symlink-writable-target')
+      File.write(writable, "untouched\n")
+      missing = tmp_path('symlink-missing-target')
+
+      runner = Dante::Runner.new('test-process', :daemonize => true, :pid_path => @pid_path, :log_path => tmp_path('dante.log')) { sleep 100 }
+
+      [writable, missing].each do |target|
+        File.chmod(0755, @dir)
+        FileUtils.rm_f(@pid_path)
+        File.symlink(target, @pid_path)
+        File.chmod(0555, @dir)
+
+        assert_raises(Errno::ELOOP) { runner.send(:store_pid, Process.pid) }
+        assert File.symlink?(@pid_path)
+        if target == writable
+          assert_equal "untouched\n", File.read(writable)
+        else
+          refute File.exist?(missing)
+        end
+      end
+    ensure
+      File.chmod(0755, @dir) if @dir && File.exist?(@dir)
+      FileUtils.rm_f(@pid_path) if @pid_path
+    end
   end # unwritable pid file directory
 
   describe "with a log file there already" do
