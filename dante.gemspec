@@ -18,14 +18,7 @@ Gem::Specification.new do |s|
     "rubygems_mfa_required" => "true"
   }
 
-  s.files         = %w[
-    CHANGELOG.md
-    LICENSE
-    README.md
-    lib/dante.rb
-    lib/dante/runner.rb
-    lib/dante/version.rb
-  ]
+  s.files         = Dir['lib/**/*.rb'] + %w[CHANGELOG.md LICENSE README.md]
   s.executables   = []
   s.require_paths = ["lib"]
   s.required_ruby_version = '>= 2.7'

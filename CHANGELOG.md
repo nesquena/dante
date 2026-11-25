@@ -5,8 +5,8 @@
 - Fixed: when daemonizing with a pid file in a directory the daemon cannot write and no pid file exists there yet,
   the error reported is the original `Errno::EACCES` rather than `Errno::ENOENT` from the in-place fallback. (#37,
   @nesquena)
-- Packaging: the gem now declares an explicit file list (`lib/`, `LICENSE`, `README.md`, `CHANGELOG.md`) instead of
-  `git ls-files`, so test files, CI workflows and repository metadata are no longer shipped in the gem. (#XXXX,
+- Packaging: the gem now ships only `lib/`, `LICENSE`, `README.md` and `CHANGELOG.md` instead of every file in
+  `git ls-files`, so test files, CI workflows and repository metadata are no longer in the gem. (#XXXX,
   @nesquena)
 
 ## 0.4.0 (2026-11-01)
