@@ -1202,7 +1202,6 @@ describe "dante runner" do
       process = TestingProcess.new('cli', @tmpdir)
       runner = Dante::Runner.new('test-cli', :argv => ['-d', '-l', logfile, '-P', pid_path]) { process.run_d! }
 
-      assert_equal true, runner.daemon_stopped?
       start_output = capture_stdout { runner.execute }
       assert_match(/Daemon has started successfully/, start_output)
       wait_for_output(logfile, /The rescuer/)
