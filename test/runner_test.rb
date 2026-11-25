@@ -311,6 +311,50 @@ describe "dante runner" do
     end
   end # pid file path taken
 
+  describe "with daemonize flag and a pid file directory it cannot write" do
+    before do
+      skip "requires non-root (root can write to a 0555 directory)" if Process.euid == 0
+      @dir = tmp_path('unwritable-pid-dir')
+      Dir.mkdir(@dir, 0755)
+      @pid_path = File.join(@dir, 'dante.pid')
+    end
+
+    after do
+      File.chmod(0755, @dir) if @dir && File.exist?(@dir)
+    end
+
+    it "raises the original EACCES rather than ENOENT when no pid file exists" do
+      File.chmod(0555, @dir)
+      runner = Dante::Runner.new('test-process', :daemonize => true, :pid_path => @pid_path, :log_path => tmp_path('dante.log')) { sleep 100 }
+      err = assert_raises(Errno::EACCES) { runner.send(:store_pid, Process.pid) }
+      assert_nil err.cause
+
+      lib = File.expand_path('../../lib', __FILE__)
+      script = "p Dante::Runner.new('test-process', :daemonize => true, :pid_path => ARGV[0], :log_path => ARGV[1]) { sleep 30 }.execute"
+      run = lambda { IO.popen([RbConfig.ruby, '-I', lib, '-rdante', '-e', script, @pid_path, tmp_path('dante.log')], :err => [:child, :out], &:read) }
+      output = (defined?(Bundler) ? Bundler.with_unbundled_env(&run) : run.call).lines.grep_v(/: warning: /).join
+
+      assert_match(/Daemonized process couldn't be started\nfalse\n\z/, output)
+      assert_match(/Errno::EACCES/, output)
+      refute_match(/Errno::ENOENT/, output)
+    end
+
+    it "writes an existing writable pid file in place" do
+      File.write(@pid_path, "")
+      File.chmod(0555, @dir)
+      started = tmp_path('started')
+      output = capture_stdout {
+        @started = Dante::Runner.new('test-process', :daemonize => true, :pid_path => @pid_path, :log_path => tmp_path('dante.log')) {
+          File.write(started, ""); sleep 100 }.execute }
+
+      assert_equal true, @started
+      assert_match(/Daemon has started successfully/, output)
+      wait_for_output(started)
+      pid = daemon_pid(@pid_path)
+      assert_equal "#{pid}\n", File.read(@pid_path)
+    end
+  end # unwritable pid file directory
+
   describe "with a log file there already" do
     # Runs a runner in the foreground in a forked child, writing to log_path.
     def run_with_log(log_path)
