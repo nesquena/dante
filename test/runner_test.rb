@@ -353,6 +353,32 @@ describe "dante runner" do
       pid = daemon_pid(@pid_path)
       assert_equal "#{pid}\n", File.read(@pid_path)
     end
+
+    it "raises ELOOP and leaves the target unwritten when the pid path is a symlink" do
+      writable = tmp_path('symlink-writable-target')
+      File.write(writable, "untouched\n")
+      missing = tmp_path('symlink-missing-target')
+
+      runner = Dante::Runner.new('test-process', :daemonize => true, :pid_path => @pid_path, :log_path => tmp_path('dante.log')) { sleep 100 }
+
+      [writable, missing].each do |target|
+        File.chmod(0755, @dir)
+        FileUtils.rm_f(@pid_path)
+        File.symlink(target, @pid_path)
+        File.chmod(0555, @dir)
+
+        assert_raises(Errno::ELOOP) { runner.send(:store_pid, Process.pid) }
+        assert File.symlink?(@pid_path)
+        if target == writable
+          assert_equal "untouched\n", File.read(writable)
+        else
+          refute File.exist?(missing)
+        end
+      end
+    ensure
+      File.chmod(0755, @dir) if @dir && File.exist?(@dir)
+      FileUtils.rm_f(@pid_path) if @pid_path
+    end
   end # unwritable pid file directory
 
   describe "with a log file there already" do
@@ -1121,4 +1147,88 @@ describe "dante runner" do
       assert_match(/test-process - Test process banana/, @stdout)
     end
   end # help
+
+  describe "with Dante::Runner.run" do
+    it "returns a Runner instance configured with the given options and block" do
+      ran_port = nil
+      runner = Dante::Runner.run('test-process', :port => 4567, :argv => []) { |opts| ran_port = opts[:port] }
+
+      assert_kind_of Dante::Runner, runner
+      assert_equal 'test-process', runner.name
+      assert_nil ran_port
+      output = capture_stdout { runner.execute }
+      assert_match(/Starting test-process service/, output)
+      assert_equal 4567, ran_port
+    end
+  end # Runner.run
+
+  describe "with no startup block" do
+    it "starts cleanly in the foreground without raising" do
+      output = capture_stdout { Dante::Runner.new('test-process', :argv => []).execute }
+      assert_match(/Starting test-process service/, output)
+    end
+  end # no startup block
+
+  describe "with a hard-linked pid file" do
+    it "reports the daemon as stopped and refuses to stop the process" do
+      pid_path = tmp_path('dante.pid')
+      other = tmp_path('other.pid')
+      sleeper = spawn('sleep', '60')
+      File.write(other, "#{sleeper}\n")
+      File.link(other, pid_path)
+      runner = Dante::Runner.new('test-process', :pid_path => pid_path)
+
+      assert_equal false, runner.daemon_running?
+      assert_equal true, runner.daemon_stopped?
+      result = nil
+      output = capture_stdout { result = runner.stop }
+
+      assert_equal false, result
+      assert_match(/pid file #{Regexp.escape(pid_path)} has other hard links; not stopping it/, output)
+      assert process_alive?(sleeper), "hard-linked pid file caused sleeper to be stopped"
+      assert File.exist?(pid_path), "hard-linked pid file was removed"
+    ensure
+      if sleeper
+        Process.kill('KILL', sleeper) rescue nil
+        Process.wait(sleeper) rescue nil
+      end
+    end
+  end # hard-linked pid file
+
+  describe "with CLI daemon, log, force, and user/group flags" do
+    it "daemonizes with -d, logs with -l, reports daemon_stopped?, and force-stops with -k -f" do
+      pid_path = tmp_path('cli-dante.pid')
+      logfile = tmp_path('cli-dante.log')
+      process = TestingProcess.new('cli', @tmpdir)
+      runner = Dante::Runner.new('test-cli', :argv => ['-d', '-l', logfile, '-P', pid_path]) { process.run_d! }
+
+      start_output = capture_stdout { runner.execute }
+      assert_match(/Daemon has started successfully/, start_output)
+      wait_for_output(logfile, /The rescuer/)
+      pid = daemon_pid(pid_path)
+      assert_equal false, runner.daemon_stopped?
+
+      stop_output = capture_stdout {
+        Dante::Runner.new('test-cli', :argv => ['-k', '-f', '-P', pid_path]).execute
+      }
+      assert_match(/Failed to kill daemonized process/, stop_output)
+      assert_match(/Daemonized process killed after kill/, stop_output)
+      refute process_alive?(pid)
+      refute File.exist?(pid_path)
+      assert_equal true, runner.daemon_stopped?
+    end
+
+    it "parses -u and -G into options[:user] and options[:group]" do
+      parsed = nil
+      runner = Dante::Runner.new('test-cli', :argv => ['-u', 'alice', '-G', 'staff'])
+      runner.verify_options_hook = lambda do |opts|
+        parsed = opts.dup
+        throw :parsed
+      end
+      catch(:parsed) { runner.execute }
+
+      assert_equal 'alice', parsed[:user]
+      assert_equal 'staff', parsed[:group]
+    end
+  end # CLI flags
 end
